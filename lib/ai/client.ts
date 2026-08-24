@@ -1,18 +1,13 @@
-import Anthropic from "@anthropic-ai/sdk";
+import "server-only";
 
-let client: Anthropic | undefined;
+import { getCodexAppServer } from "./codex-app-server";
 
 export function getAiClient() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is required for AI coaching and content jobs");
-  }
-  client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return client;
+  return getCodexAppServer();
 }
 
-export function assertWithinAiBudget(monthToDateUsd: number, requestedUsd: number) {
-  const cap = Number(process.env.AI_MONTHLY_CAP_USD ?? 40);
-  if (monthToDateUsd + requestedUsd > cap) {
-    throw new Error(`AI monthly cap of $${cap.toFixed(2)} would be exceeded`);
-  }
+export function assertWithinAiBudget(monthToDateUsd?: number, requestedUsd?: number) {
+  void monthToDateUsd;
+  void requestedUsd;
+  // ChatGPT-account usage is governed by Codex rate limits, not API-key spend.
 }

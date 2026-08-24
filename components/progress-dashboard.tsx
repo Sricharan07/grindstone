@@ -96,7 +96,7 @@ function MasteryView({ state }: { state: LearnerState }) {
   return (
     <div className="mastery-view">
       <section className="mastery-map">
-        <div className="section-heading-row"><div><h3>Topic mastery</h3><p>Ratings include scaffolding, time, difficulty, and calibration.</p></div><span className="status-pill"><History size={14} /> {state.attempts.length} attempts</span></div>
+        <div className="section-heading-row"><div><h3>Topic mastery</h3><p>Ratings account for help used, time, difficulty, and confidence accuracy.</p></div><span className="status-pill"><History size={14} /> {state.attempts.length} attempts</span></div>
         <div className="mastery-table">
           <header><span>Topic</span><span>Evidence</span><span>Mastery</span><span>Confidence</span><span /></header>
           {topics.map((topic) => (

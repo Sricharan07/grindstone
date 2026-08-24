@@ -1,26 +1,55 @@
-import { and, eq, gte, sql } from "drizzle-orm";
-import { getDb } from "@/db";
-import { aiUsage } from "@/db/schema";
-import { assertWithinAiBudget, getAiClient } from "./client";
-import { estimateAiCost } from "./pricing";
+import "server-only";
 
-export async function coach({ userId, purpose, prompt, context }: { userId: string; purpose: string; prompt: string; context: string }) {
-  let userMonthToDateUsd = 0;
-  let globalMonthToDateUsd = 0;
+import { getCodexAppServer } from "./codex-app-server";
+
+export type CoachPurpose = "why" | "teach-back" | "mock-debrief" | "short-answer" | "socratic" | "concept" | "pseudocode" | "next-step" | "completion";
+
+const quota = new Map<string, { day: string; count: number }>();
+let activeTurns = 0;
+const waiters: Array<() => void> = [];
+
+function claimQuota(userId: string) {
+  const day = new Date().toISOString().slice(0, 10);
+  const current = quota.get(userId);
+  const count = current?.day === day ? current.count : 0;
+  const limit = Number(process.env.AI_USER_DAILY_TURNS ?? 80);
+  if (count >= limit) throw new Error(`Daily AI tutor limit reached (${limit} turns). Core lessons and the code runner remain available.`);
+  quota.set(userId, { day, count: count + 1 });
+}
+
+async function acquireSlot() {
+  const limit = Math.max(1, Number(process.env.AI_MAX_CONCURRENT_TURNS ?? 2));
+  if (activeTurns >= limit) await new Promise<void>((resolve) => waiters.push(resolve));
+  activeTurns += 1;
+  return () => {
+    activeTurns -= 1;
+    waiters.shift()?.();
+  };
+}
+
+export function buildTutorPrompt({ purpose, prompt, context }: { purpose: CoachPurpose; prompt: string; context: string }) {
+  const instruction = purpose === "completion"
+    ? "Return exactly one syntactically valid line that could come next. No markdown, explanation, or surrounding code."
+    : purpose === "socratic"
+      ? "Ask exactly one guiding question. Do not answer it."
+      : purpose === "concept"
+        ? "Explain only the relevant concept and mental model. Do not provide code."
+        : purpose === "pseudocode"
+          ? "Give concise language-neutral pseudocode, not runnable code."
+          : purpose === "next-step"
+            ? "Give only the learner's next concrete step, not the remaining solution."
+            : "Answer the learner's question without supplying a finished solution.";
+  return `Help level: ${purpose}\nRequired response behavior: ${instruction}\n\n<lesson_context>\n${context}\n</lesson_context>\n\n<learner_message>\n${prompt}\n</learner_message>`;
+}
+
+export async function coach({ userId, lessonId, purpose, prompt, context, signal }: { userId: string; lessonId?: string; purpose: CoachPurpose; prompt: string; context: string; signal?: AbortSignal }) {
+  claimQuota(userId);
+  const release = await acquireSlot();
   try {
-    const start = new Date(); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
-    const [userRow] = await getDb().select({ total: sql<number>`coalesce(sum(${aiUsage.costUsd}), 0)` }).from(aiUsage).where(and(eq(aiUsage.userId, userId), gte(aiUsage.createdAt, start)));
-    const [globalRow] = await getDb().select({ total: sql<number>`coalesce(sum(${aiUsage.costUsd}), 0)` }).from(aiUsage).where(gte(aiUsage.createdAt, start));
-    userMonthToDateUsd = Number(userRow?.total ?? 0);
-    globalMonthToDateUsd = Number(globalRow?.total ?? 0);
-  } catch { userMonthToDateUsd = 0; globalMonthToDateUsd = 0; }
-  const userCap = Number(process.env.AI_USER_MONTHLY_CAP_USD ?? 5);
-  if (userMonthToDateUsd + 0.05 > userCap) throw new Error(`Per-user AI cap of $${userCap.toFixed(2)} would be exceeded`);
-  assertWithinAiBudget(globalMonthToDateUsd, 0.05);
-  const model = process.env.AI_CRITIC_MODEL ?? "claude-opus-5";
-  const response = await getAiClient().messages.create({ model, max_tokens: 700, temperature: 0.2, messages: [{ role: "user", content: `You are Grindstone's terse interview coach. Push back on hand-waving. Never provide a finished solution when a question or counterexample can advance retrieval.\n\nAnchored content:\n${context}\n\nLearner request:\n${prompt}` }] });
-  const answer = response.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
-  const costUsd = estimateAiCost("critic", response.usage.input_tokens, response.usage.output_tokens);
-  try { await getDb().insert(aiUsage).values({ userId, purpose, model, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, costUsd }); } catch { /* Browser-only development may run without Postgres. */ }
-  return { answer, costUsd, monthToDateUsd: userMonthToDateUsd + costUsd };
+    const answer = await getCodexAppServer().runTutorTurn({ threadKey: `${userId}:${lessonId ?? purpose}`, prompt: buildTutorPrompt({ purpose, prompt, context }), signal });
+    const clean = purpose === "completion" ? answer.replaceAll("`", "").split("\n").find((line) => line.trim())?.trim() ?? answer : answer;
+    return { answer: clean, model: "gpt-5.6-luna", reasoning: "xhigh" };
+  } finally {
+    release();
+  }
 }

@@ -23,7 +23,7 @@ export function ProgressBar({
     >
       <span
         className={cn("progress-fill", `progress-fill--${tone}`)}
-        style={{ width: `${safeValue}%` }}
+        style={{ transform: `scaleX(${safeValue / 100})` }}
       />
     </div>
   );

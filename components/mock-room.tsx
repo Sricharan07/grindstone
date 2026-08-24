@@ -143,7 +143,7 @@ export function MockRoom() {
             <p>Your algorithm must run in <strong>O(n)</strong> time.</p>
             <div className="example-block"><strong>Example</strong><code>Input: [100, 4, 200, 1, 3, 2]</code><code>Output: 4</code><p>The longest sequence is [1, 2, 3, 4].</p></div>
             <div className="constraints-block"><strong>Constraints</strong><ul><li>0 ≤ nums.length ≤ 10⁵</li><li>−10⁹ ≤ nums[i] ≤ 10⁹</li></ul></div>
-            <div className="mock-room-rules"><EyeOff size={17} /><p><strong>The safety net is off.</strong> No hints, autocomplete, scaffolding, or sample-run feedback until you submit.</p></div>
+            <div className="mock-room-rules"><EyeOff size={17} /><p><strong>Interview conditions are on.</strong> No hints, autocomplete, guided help, or sample-run feedback until you submit.</p></div>
           </section>
 
           <section className="mock-editor-pane">

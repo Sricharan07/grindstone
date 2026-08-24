@@ -1,6 +1,7 @@
 import { buildDailyPlan, masteryPercent, type TrainingItem } from "@/lib/engine";
 import type { LearnerState } from "./types";
 import { sprintClock } from "./sprint-clock";
+import { lessonById, nextLessonId } from "@/lib/content/lessons";
 
 const routeFrontier: Record<LearnerState["profile"]["route"], string[]> = {
   foundations: ["Values and types", "Mutability and references", "Conditionals", "Loops", "Functions and scope"],
@@ -21,6 +22,9 @@ export function dailyPlanFor(state: LearnerState, now = new Date()) {
   const recalibration = state.sprint.gate?.passed === false ? state.sprint.gate.recalibration : undefined;
   const weak = recalibration?.reteachTopics[0] ?? weakestTopic(state);
   const codingRoute = ["foundations", "product", "big-tech"].includes(state.profile.route);
+  const curriculumRoute = state.profile.route !== "non-tech";
+  const completedLessons = new Set(Object.entries(state.lessons).filter(([, progress]) => progress.transferPassed).map(([id]) => id));
+  const nextLesson = lessonById(nextLessonId(completedLessons));
   const dueReviews: TrainingItem[] = (state.reviews ?? [])
     .filter((review) => new Date(review.dueAt).getTime() <= now.getTime())
     .sort((left, right) => left.dueAt.localeCompare(right.dueAt))
@@ -30,19 +34,19 @@ export function dailyPlanFor(state: LearnerState, now = new Date()) {
       topic: review.topic,
       kind: "review" as const,
       minutes: ["coding", "problem", "follow-up"].includes(review.itemType) ? 20 : 10,
-      why: `FSRS scheduled this retrieval for ${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(review.dueAt))}.`,
+      why: `Your memory schedule brought this back for ${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(review.dueAt))}.`,
       due: true,
       priority: 20 - Math.min(index, 10),
     }));
   const candidates: TrainingItem[] = [
     ...dueReviews,
     {
-      id: `${dayKey}:concept:${weak}`,
-      title: recalibration ? `Rebuild gate evidence: ${weak}` : `Build working knowledge: ${weak}`,
-      topic: weak,
+      id: `${dayKey}:concept:${recalibration || !curriculumRoute ? weak : nextLesson.id}`,
+      title: recalibration ? `Rebuild checkpoint evidence: ${weak}` : curriculumRoute ? nextLesson.title : `Build working knowledge: ${weak}`,
+      topic: recalibration || !curriculumRoute ? weak : nextLesson.topic,
       kind: recalibration ? "aptitude" : "concept",
-      minutes: 18,
-      why: recalibration ? "Friday's miss brings this topic back at a lower fade level." : `This is the lowest measured frontier for your ${state.profile.route.replace("-", " ")} route.`,
+      minutes: curriculumRoute && !recalibration ? nextLesson.minutes : 18,
+      why: recalibration ? "The weekly checkpoint brings this topic back with more guidance." : curriculumRoute ? nextLesson.purpose : `This is the lowest measured frontier for your ${state.profile.route.replace("-", " ")} route.`,
       newMaterial: !recalibration,
       priority: 9,
     },

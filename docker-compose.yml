@@ -122,7 +122,9 @@ services:
       AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GRINDSTONE_CODEX_HOME: /codex-home
+      AI_USER_DAILY_TURNS: ${AI_USER_DAILY_TURNS:-80}
+      AI_MAX_CONCURRENT_TURNS: ${AI_MAX_CONCURRENT_TURNS:-2}
       DATABASE_URL: postgres://${POSTGRES_USER:-grindstone}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-grindstone}
       SQLSANDBOX_URL: postgres://sandbox_ro:sandbox@sqlsandbox:5432/sandbox
       REDIS_URL: redis://redis:6379
@@ -133,6 +135,8 @@ services:
       piston-init: { condition: service_completed_successfully }
     ports:
       - "127.0.0.1:3000:3000"
+    volumes:
+      - codexhome:/codex-home
     networks: [internal, edge]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null"]
@@ -152,7 +156,7 @@ services:
     env_file: .env
     environment:
       JUDGE_ADAPTER: piston
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GRINDSTONE_CODEX_HOME: /codex-home
       DATABASE_URL: postgres://${POSTGRES_USER:-grindstone}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-grindstone}
       REDIS_URL: redis://redis:6379
       PISTON_URL: http://judge:2000
@@ -160,6 +164,8 @@ services:
       db: { condition: service_healthy }
       piston-init: { condition: service_completed_successfully }
     networks: [internal, edge]
+    volumes:
+      - codexhome:/codex-home
 
   cloudflared:
     profiles: [host]
@@ -200,6 +206,7 @@ volumes:
   pgdata:
   redisdata:
   pistondata:
+  codexhome:
 
 networks:
   internal:

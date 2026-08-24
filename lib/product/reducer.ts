@@ -19,6 +19,36 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
   const nextRevision = state.revision + 1;
 
   switch (action.type) {
+    case "profile.update": {
+      const name = action.payload.name?.trim() || state.profile.name;
+      const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "GS";
+      return {
+        ...state,
+        revision: nextRevision,
+        profile: {
+          ...state.profile,
+          name,
+          initials,
+          target: action.payload.target ?? state.profile.target,
+          preferredLanguage: action.payload.language ?? state.profile.preferredLanguage,
+          dailyMinutes: action.payload.dailyMinutes ?? state.profile.dailyMinutes,
+          daysPerWeek: action.payload.daysPerWeek ?? state.profile.daysPerWeek,
+        },
+        onboarding: {
+          ...state.onboarding,
+          target: action.payload.target ?? state.onboarding.target,
+          language: action.payload.language ?? state.onboarding.language,
+          dailyMinutes: action.payload.dailyMinutes ?? state.onboarding.dailyMinutes,
+          daysPerWeek: action.payload.daysPerWeek ?? state.onboarding.daysPerWeek,
+        },
+      };
+    }
+    case "onboarding.save":
+      return {
+        ...state,
+        revision: nextRevision,
+        onboarding: { ...state.onboarding, ...action.payload },
+      };
     case "onboarding.complete":
       return {
         ...state,
@@ -33,7 +63,41 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
         },
         sprint: { ...state.sprint, goal: action.payload.goal, status: "draft" },
         commitment: { ...state.commitment, implementationIntention: action.payload.implementationIntention, stakeCents: action.payload.stakeCents },
+        onboarding: {
+          ...state.onboarding,
+          ...action.payload,
+          completed: true,
+          step: 3,
+        },
       };
+    case "lesson.save": {
+      const current = state.lessons[action.payload.lessonId];
+      const fallback = {
+        phase: "concept" as const,
+        language: state.profile.preferredLanguage,
+        code: "",
+        transferCode: "",
+        prediction: "",
+        explanation: "",
+        hintsUsed: [],
+        testsPassed: false,
+        transferPassed: false,
+        updatedAt: new Date().toISOString(),
+      };
+      return {
+        ...state,
+        revision: nextRevision,
+        lessons: {
+          ...state.lessons,
+          [action.payload.lessonId]: {
+            ...fallback,
+            ...current,
+            ...action.payload.progress,
+            updatedAt: action.payload.progress.updatedAt ?? new Date().toISOString(),
+          },
+        },
+      };
+    }
     case "plan.toggle": {
       const exists = state.sprint.completedItems.includes(action.payload.itemId);
       const completedItems = exists
@@ -69,7 +133,7 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
     case "attempt.record": {
       const priorRepetitions = state.attempts.filter((attempt) => attempt.itemType === action.payload.itemType && attempt.itemId === action.payload.itemId).length;
       const previous = state.mastery[action.payload.topic] ?? { rating: 0.35, confidence: 0.2, attempts: 0, calibrationError: 0 };
-      const updated = updateMastery(previous, {
+      const rawUpdated = updateMastery(previous, {
         correct: action.payload.correct,
         difficulty: action.payload.difficulty,
         durationMs: action.payload.durationMs,
@@ -77,6 +141,16 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
         scaffoldLevel: action.payload.scaffoldLevel,
         predictedSuccess: action.payload.predictedSuccess,
       });
+      const assistance = action.payload.assistance ?? (action.payload.scaffoldLevel > 0 ? "concept" : "none");
+      const assisted = assistance !== "none";
+      const mayProveMastery = !assisted && Boolean(action.payload.transfer);
+      const updated = mayProveMastery
+        ? rawUpdated
+        : {
+            ...rawUpdated,
+            rating: Math.min(rawUpdated.rating, Math.max(previous.rating, 0.68)),
+            confidence: Math.min(rawUpdated.confidence, 0.72),
+          };
       const reviewedAt = new Date(action.payload.createdAt);
       const previousReview = (state.reviews ?? []).find((review) => review.itemType === action.payload.itemType && review.itemId === action.payload.itemId);
       const card = previousReview ? {

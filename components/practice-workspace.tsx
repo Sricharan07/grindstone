@@ -45,7 +45,7 @@ export function PracticeWorkspace() {
     <div className="practice-workspace">
       <header className="workspace-heading">
         <div>
-          <p className="context-line">{state.sprint.week >= 3 ? `Interleaved for week ${state.sprint.week}` : `Blocked acquisition for week ${state.sprint.week}`}</p>
+          <p className="context-line">{state.sprint.week >= 3 ? `Mixed recall for week ${state.sprint.week}` : `Focused learning for week ${state.sprint.week}`}</p>
           <h2>Practice the choice, not the chapter.</h2>
           <p>{state.sprint.week >= 3 ? "Your queue mixes skills because recognition is part of the interview." : "Your queue holds one topic steady while difficulty moves to your current edge."}</p>
         </div>

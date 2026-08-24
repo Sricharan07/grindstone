@@ -5,6 +5,7 @@ import { createDefaultLearnerState } from "@/lib/product/default-state";
 import { reduceLearnerState } from "@/lib/product/reducer";
 import type { LearnerAction, LearnerState } from "@/lib/product/types";
 import { synchronizeTemporalState } from "@/lib/product/sprint-clock";
+import { hydrateLearnerState } from "@/lib/product/hydrate-state";
 
 declare global {
   var __grindstoneState: Map<string, LearnerState> | undefined;
@@ -85,7 +86,7 @@ export async function loadLearnerState(actor: { id: string; email: string; name:
       const db = getDb();
       const [row] = await db.select().from(learnerSnapshots).where(eq(learnerSnapshots.userId, actor.id)).limit(1);
       if (row) {
-        const stored = row.state as LearnerState;
+        const stored = hydrateLearnerState(row.state as LearnerState);
         const state = synchronizeTemporalState(stored);
         memory.set(actor.id, state);
         return { state, persistence: "postgres" };
@@ -98,7 +99,7 @@ export async function loadLearnerState(actor: { id: string; email: string; name:
       markDatabaseUnavailable();
     }
   }
-  const state = synchronizeTemporalState(memory.get(actor.id) ?? createDefaultLearnerState(actor.name));
+  const state = synchronizeTemporalState(hydrateLearnerState(memory.get(actor.id) ?? createDefaultLearnerState(actor.name)));
   memory.set(actor.id, state);
   return { state, persistence: "memory" };
 }

@@ -36,6 +36,6 @@ export function scoreDiagnostic(answers: Record<string, string>) {
   const totalCorrect = Object.values(byTopic).reduce((sum, value) => sum + value.correct, 0);
   const codingCorrect = ["Coding foundations", "Complexity", "Arrays & hashing", "Sliding window", "Graphs"].reduce((sum, topic) => sum + (byTopic[topic]?.correct ?? 0), 0);
   const route = codingCorrect <= 1 ? "foundations" : codingCorrect <= 3 ? "product" : totalCorrect >= 10 ? "big-tech" : "product";
-  const goal = route === "foundations" ? "Write working code unaided and clear a service-IT coding round." : route === "big-tech" ? "Prove Tier B, communication, and system-design readiness." : "Pass a startup or product-company screening round.";
+  const goal = route === "foundations" ? "Write working code unaided and clear a service-IT coding round." : route === "big-tech" ? "Prove advanced coding, communication, and system-design readiness." : "Pass a startup or product-company screening round.";
   return { totalCorrect, total: diagnosticQuestions.length, topicPriors, route, goal } as const;
 }

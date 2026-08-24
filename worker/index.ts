@@ -94,7 +94,7 @@ const worker = new Worker(
           }
         }
         let regenerationQueued = 0;
-        if (replacements.size && process.env.ANTHROPIC_API_KEY) {
+        if (replacements.size) {
           const monthStart = new Date(); monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
           const [usage] = await db.select({ total: sql<number>`coalesce(sum(${aiUsage.costUsd}), 0)` }).from(aiUsage).where(gte(aiUsage.createdAt, monthStart));
           const monthToDateUsd = Number(usage?.total ?? 0);

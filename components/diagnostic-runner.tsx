@@ -35,7 +35,7 @@ export function DiagnosticRunner() {
   }
 
   return <div className="diagnostic-runner">
-    <header className="diagnostic-header"><div><p className="context-line">Day-one diagnostic</p><h1>Find the edge, then train it.</h1><p>Twelve route-spanning questions. Progress is saved after every response.</p></div><span><Clock3 size={17} /> Splittable</span></header>
+    <header className="diagnostic-header"><div><p className="context-line">Starting check</p><h1>Find the right starting difficulty.</h1><p>Twelve short questions cover the main interview skills. Every response is saved, so you can leave and resume.</p></div><span><Clock3 size={17} /> About 10 minutes</span></header>
     <div className="diagnostic-progress"><span>Question {index + 1} of {diagnosticQuestions.length}</span><ProgressBar value={((index + 1) / diagnosticQuestions.length) * 100} label="Diagnostic progress" /></div>
     <section className="diagnostic-question">
       <span><Target size={17} /> {question.topic}</span>

@@ -27,6 +27,7 @@ import { Avatar } from "./ui/avatar";
 import { ProgressBar } from "./ui/progress-bar";
 import { useLearnerState } from "./state/learner-state-provider";
 import { relativeTime, useCohort } from "./state/use-cohort";
+import { nextLessonId } from "@/lib/content/lessons";
 
 const itemIcon = {
   review: RotateCcw,
@@ -67,18 +68,26 @@ export function TodayDashboard() {
   }, [sessionRunning]);
 
   const progress = Math.round((completed.length / Math.max(todayPlan.items.length, 1)) * 100);
+  const completedLessons = new Set(Object.entries(state.lessons).filter(([, value]) => value.transferPassed).map(([id]) => id));
+  const lessonId = nextLessonId(completedLessons);
+  const nextItem = todayPlan.items.find((item) => !completed.includes(item.id));
+  const hrefFor = (kind: keyof typeof itemIcon) => kind === "coding" ? "/solve" : kind === "concept" ? `/learn?lesson=${lessonId}` : kind === "mock" ? "/mock" : "/practice";
+  const nextHref = nextItem ? hrefFor(nextItem.kind) : "/practice";
+  const lessonDraft = state.lessons[lessonId];
+  const nextIsResume = nextItem?.kind === "concept" && lessonDraft && lessonDraft.phase !== "concept";
 
   function toggleItem(id: string) {
     dispatch({ type: "plan.toggle", payload: { itemId: id } });
   }
 
   if (state.sprint.status === "draft") {
+    const setupComplete = state.onboarding.completed;
     return <div className="diagnostic-runner diagnostic-result">
       <span className="result-mark"><Target size={24} /></span>
-      <p className="context-line">New four-week sprint</p>
-      <h1>Set the target before the clock starts.</h1>
-      <p>Your route, commitment, and diagnostic create the first real plan. No progress is pre-filled.</p>
-      <Link href="/onboarding" className="button button--primary">Start onboarding <ArrowRight size={17} /></Link>
+      <p className="context-line">Setup · {setupComplete ? "Step 2 of 2" : "Step 1 of 2"}</p>
+      <h1>{setupComplete ? "Find the right starting difficulty." : "Tell Grindstone what you are preparing for."}</h1>
+      <p>{setupComplete ? "Your target and schedule are saved. Finish the short starting check and today’s first lesson will be ready." : "Choose your interview target, practice language, and available time. Every answer saves automatically."}</p>
+      <Link href={setupComplete ? "/diagnostic" : "/onboarding"} className="button button--primary">{setupComplete ? "Resume starting check" : "Continue setup"} <ArrowRight size={17} /></Link>
     </div>;
   }
 
@@ -97,6 +106,21 @@ export function TodayDashboard() {
   return (
     <div className="today-layout">
       <div className="today-content">
+        <section className="next-action" aria-labelledby="next-action-title">
+          <div className="next-action__marker"><Play size={20} fill="currentColor" /></div>
+          <div className="next-action__copy">
+            <p className="context-line">Your next task</p>
+            <h1 id="next-action-title">{nextItem?.title ?? "Complete a short retrieval set"}</h1>
+            <p>{nextItem?.why ?? "Bring back the most useful ideas before they fade."}</p>
+            <dl>
+              <div><dt>What</dt><dd>{nextItem?.topic ?? "Scheduled recall"}</dd></div>
+              <div><dt>Time</dt><dd>{nextItem?.minutes ?? 15} minutes</dd></div>
+              <div><dt>Proof</dt><dd>{nextItem?.kind === "concept" ? "Pass a fresh transfer without AI help" : nextItem?.kind === "coding" ? "Pass hidden tests and explain complexity" : "Answer from memory, then review errors"}</dd></div>
+            </dl>
+          </div>
+          <Link href={nextHref} className="button button--primary">{nextIsResume ? "Resume task" : "Start task"} <ArrowRight size={17} /></Link>
+        </section>
+
         <section className="today-heading">
           <div>
             <p className="context-line">{weekday} · Sprint {state.sprint.number}, week {state.sprint.week}</p>
@@ -197,7 +221,7 @@ export function TodayDashboard() {
             {todayPlan.items.map((item, index) => {
               const Icon = itemIcon[item.kind];
               const done = completed.includes(item.id);
-              const href = item.kind === "coding" ? "/solve" : item.kind === "concept" ? "/learn" : "/practice";
+              const href = hrefFor(item.kind);
               return (
                 <article key={item.id} className={cn("plan-item", done && "plan-item--done")}>
                   <button
@@ -264,7 +288,7 @@ export function TodayDashboard() {
           <div>
             <span>Friday gate</span>
             <h3>Mixed set under clock</h3>
-            <p>Pass line 75% · 42 minutes · no scaffolding</p>
+            <p>Pass line 75% · 42 minutes · no guided help</p>
           </div>
           <strong>{daysToGate === 0 ? "Today" : `${daysToGate}d`}</strong>
         </section>

@@ -58,11 +58,42 @@ export interface AttemptEvidence {
   targetDurationMs: number;
   predictedSuccess?: number;
   scaffoldLevel: number;
+  assistance?: "none" | "socratic" | "concept" | "pseudocode" | "next-step" | "completion";
+  transfer?: boolean;
   timed: boolean;
   communicationScore?: number;
   measuredComplexity?: string;
   answer?: unknown;
   createdAt: string;
+}
+
+export interface OnboardingDraft {
+  step: number;
+  completed: boolean;
+  experience: "never" | "codes" | "dsa" | "strong";
+  route: InterviewRoute;
+  target: string;
+  language: LearnerProfile["preferredLanguage"];
+  dailyMinutes: number;
+  daysPerWeek: number;
+  implementationIntention: string;
+  trigger: string;
+  action: string;
+  goal: string;
+  stakeCents: number | null;
+}
+
+export interface LessonProgress {
+  phase: "concept" | "predict" | "example" | "practice" | "explain" | "transfer" | "complete";
+  language: LearnerProfile["preferredLanguage"];
+  code: string;
+  transferCode: string;
+  prediction: string;
+  explanation: string;
+  hintsUsed: Array<NonNullable<AttemptEvidence["assistance"]>>;
+  testsPassed: boolean;
+  transferPassed: boolean;
+  updatedAt: string;
 }
 
 export interface StarStory {
@@ -114,13 +145,18 @@ export interface LearnerState {
     answers: Record<string, string>;
     topicPriors: Record<string, number>;
   };
+  onboarding: OnboardingDraft;
+  lessons: Record<string, LessonProgress>;
   driveResults: Array<{ pack: string; score: number; sections: Record<string, number>; completedAt: string }>;
   starStories: StarStory[];
   contentReports: Array<{ itemId: string; reason: string; createdAt: string }>;
 }
 
 export type LearnerAction =
+  | { type: "onboarding.save"; payload: Partial<OnboardingDraft> }
+  | { type: "profile.update"; payload: { name?: string; target?: string; language?: LearnerProfile["preferredLanguage"]; dailyMinutes?: number; daysPerWeek?: number } }
   | { type: "onboarding.complete"; payload: { route: InterviewRoute; target: string; language: LearnerProfile["preferredLanguage"]; dailyMinutes: number; daysPerWeek: number; implementationIntention: string; goal: string; stakeCents: number | null } }
+  | { type: "lesson.save"; payload: { lessonId: string; progress: Partial<LessonProgress> } }
   | { type: "plan.toggle"; payload: { itemId: string } }
   | { type: "checkin.standup"; payload: { body: string; completedAt: string } }
   | { type: "checkin.evening"; payload: { body: string; completedMinutes: number; completedAt: string } }

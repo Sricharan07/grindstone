@@ -5,6 +5,7 @@ import { createDefaultLearnerState } from "@/lib/product/default-state";
 import { reduceLearnerState } from "@/lib/product/reducer";
 import type { LearnerAction, LearnerState } from "@/lib/product/types";
 import { synchronizeTemporalState } from "@/lib/product/sprint-clock";
+import { hydrateLearnerState } from "@/lib/product/hydrate-state";
 
 interface LearnerStateValue {
   state: LearnerState;
@@ -14,7 +15,8 @@ interface LearnerStateValue {
 }
 
 const LearnerStateContext = createContext<LearnerStateValue | null>(null);
-const storageKey = "grindstone-learner-state-v1";
+const storageKey = "grindstone-learner-state-v2";
+const legacyStorageKey = "grindstone-learner-state-v1";
 
 export function LearnerStateProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<LearnerState>(createDefaultLearnerState);
@@ -23,11 +25,11 @@ export function LearnerStateProvider({ children }: { children: React.ReactNode }
   const syncQueue = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
-    const local = window.localStorage.getItem(storageKey);
+    const local = window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(legacyStorageKey);
     if (local) {
       try {
         const parsed = JSON.parse(local) as LearnerState;
-        window.queueMicrotask(() => setState(synchronizeTemporalState(parsed)));
+        window.queueMicrotask(() => setState(synchronizeTemporalState(hydrateLearnerState(parsed))));
       } catch { window.localStorage.removeItem(storageKey); }
     }
     const controller = new AbortController();
@@ -35,7 +37,7 @@ export function LearnerStateProvider({ children }: { children: React.ReactNode }
       .then(async (response) => response.ok ? response.json() as Promise<{ state: LearnerState; persistence: "postgres" | "memory" }> : null)
       .then((result) => {
         if (!result) return;
-        setState((current) => result.state.revision >= current.revision ? synchronizeTemporalState(result.state) : current);
+        setState((current) => result.state.revision >= current.revision ? synchronizeTemporalState(hydrateLearnerState(result.state)) : current);
         setPersistence(result.persistence);
       })
       .catch(() => undefined)

@@ -1,15 +1,87 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, Lock, Target } from "@/components/icons";
-import { companyPolicies, curriculumGroups, recognitionPatterns } from "@/lib/content/catalog";
+import { useState } from "react";
+import { ArrowRight, BookOpen, Check, Clock3, Code2, Target, Timer } from "@/components/icons";
+import { CURRICULUM } from "@/lib/content/lessons";
 import { cn } from "@/lib/utils";
 import { useLearnerState } from "./state/learner-state-provider";
-import { ProgressBar } from "./ui/progress-bar";
-import { masteryPercent } from "@/lib/engine";
+
+const weekPurpose = [
+  "Build the language and data-structure foundations used in almost every coding round.",
+  "Learn the four most common ways to remove repeated work from linear-data problems.",
+  "Move from flat data into nested structure, traversal, and priority-based selection.",
+  "Integrate the patterns, recover from mistakes, and rehearse the real interview conditions.",
+];
+
+const kindLabel = { learn: "Learn and code", practice: "Recall and apply", checkpoint: "Evidence check", mock: "Interview rehearsal" };
+const kindIcon = { learn: BookOpen, practice: Code2, checkpoint: Target, mock: Timer };
 
 export function CurriculumMap() {
-  const { state } = useLearnerState(); const [selected, setSelected] = useState(curriculumGroups[0].id); const group = curriculumGroups.find((item) => item.id === selected) ?? curriculumGroups[0];
-  return <div className="curriculum-map"><header className="workspace-heading"><div><p className="context-line">Route-aware curriculum</p><h2>Know what is gated, and why.</h2><p>Tier C stays locked until Tier B evidence is stable. Placement and interview tracks share the same mastery machinery.</p></div><span className="status-pill"><Target size={16} /> {curriculumGroups.reduce((sum, item) => sum + item.topics.length, 0)} named skills</span></header><div className="curriculum-layout"><aside>{curriculumGroups.map((item) => <button type="button" key={item.id} className={cn(selected === item.id && "curriculum-group--active")} onClick={() => setSelected(item.id)}><span>{item.tier}</span><strong>{item.title}</strong><small>{item.topics.length} topics</small></button>)}</aside><main><div className="section-heading-row"><div><span className="context-line">Tier {group.tier}</span><h3>{group.title}</h3></div><Link href="/learn">Open mutability lesson <ArrowRight size={16} /></Link></div><div className="curriculum-topics">{group.topics.map((topic, index) => { const evidence = state.mastery[topic]; const locked = group.tier === "C" && masteryPercent(state.mastery["DP state design"] ?? { rating: 0, confidence: 0, attempts: 0, calibrationError: 0 }) < 68; const value = evidence ? masteryPercent(evidence) : 0; return <div key={topic}><span>{locked ? <Lock size={15} /> : value >= 70 ? <Check size={15} /> : index + 1}</span><p><strong>{topic}</strong><small>{locked ? "Clear Tier B first" : evidence ? `${evidence.attempts} evidence points` : "Not started"}</small></p><ProgressBar value={value} label={`${topic} mastery`} /><em>{value}%</em></div>; })}</div></main><aside className="pattern-index"><h3>20 recognition patterns</h3><p>Name the tool before you write code.</p>{recognitionPatterns.map((pattern, index) => <span key={pattern}><i>{index + 1}</i>{pattern}</span>)}</aside></div><section className="policy-band"><div><p className="context-line">Per-round AI policy</p><h3>The company name is not the policy.</h3></div>{companyPolicies.map((item) => <div key={item.company}><strong>{item.company}</strong><span>{item.round}</span><p>{item.policy}</p><small>{item.verified}</small></div>)}</section></div>;
+  const { state } = useLearnerState();
+  const [week, setWeek] = useState<1 | 2 | 3 | 4>(state.sprint.status === "active" ? state.sprint.week : 1);
+  const sessions = CURRICULUM.filter((session) => session.week === week);
+  const completedCount = CURRICULUM.filter((session) => session.lessonId && state.lessons[session.lessonId]?.transferPassed).length;
+
+  return (
+    <div className="curriculum-map curriculum-path">
+      <header className="workspace-heading curriculum-heading">
+        <div>
+          <p className="context-line">Your four-week interview path</p>
+          <h1>Know what you are learning and why it matters.</h1>
+          <p>Each week teaches a small group of patterns, then asks you to recall and transfer them without the worked example.</p>
+        </div>
+        <div className="curriculum-progress" aria-label={`${completedCount} of 12 coding lessons independently completed`}>
+          <strong>{completedCount}/12</strong>
+          <span>coding lessons proven without help</span>
+        </div>
+      </header>
+
+      <div className="week-tabs" role="tablist" aria-label="Curriculum week">
+        {([1, 2, 3, 4] as const).map((value) => (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={week === value}
+            className={cn(week === value && "week-tab--active")}
+            key={value}
+            onClick={() => setWeek(value)}
+          >
+            <span>Week {value}</span>
+            <small>{value === 1 ? "Foundations" : value === 2 ? "Linear patterns" : value === 3 ? "Traversal" : "Interview mode"}</small>
+          </button>
+        ))}
+      </div>
+
+      <section className="week-intro" aria-labelledby="week-title">
+        <span className="week-number">0{week}</span>
+        <div>
+          <p className="context-line">Week {week} outcome</p>
+          <h2 id="week-title">{weekPurpose[week - 1]}</h2>
+        </div>
+      </section>
+
+      <ol className="curriculum-sessions">
+        {sessions.map((session) => {
+          const Icon = kindIcon[session.kind];
+          const complete = Boolean(session.lessonId && state.lessons[session.lessonId]?.transferPassed);
+          const href = session.lessonId ? `/learn?lesson=${session.lessonId}` : session.kind === "mock" ? "/mock" : "/practice";
+          return (
+            <li key={session.id} className={cn(complete && "curriculum-session--complete")}>
+              <span className="session-order">{complete ? <Check size={17} /> : session.order}</span>
+              <div className="session-copy">
+                <span><Icon size={15} /> {kindLabel[session.kind]}</span>
+                <h3>{session.title}</h3>
+                <p>{session.purpose}</p>
+              </div>
+              <span className="session-duration"><Clock3 size={15} /> {session.minutes} min</span>
+              <Link href={href} className="button button--secondary">
+                {complete ? "Review" : session.lessonId ? "Start" : "Open"} <ArrowRight size={16} />
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
 }

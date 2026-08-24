@@ -85,4 +85,21 @@ describe("learner state reducer", () => {
     expect(september.streak.freezes).toBe(1);
     expect(september.streak.freezeMonth).toBe("2026-09");
   });
+
+  it("persists onboarding and lesson drafts before either flow completes", () => {
+    const onboarding = reduceLearnerState(createDefaultLearnerState(), { type: "onboarding.save", payload: { step: 1, target: "Big tech", language: "cpp" } });
+    const lesson = reduceLearnerState(onboarding, { type: "lesson.save", payload: { lessonId: "hashmap-two-sum", progress: { phase: "practice", code: "draft code", prediction: "lookup before insert" } } });
+    expect(lesson.onboarding).toMatchObject({ step: 1, target: "Big tech", language: "cpp" });
+    expect(lesson.lessons["hashmap-two-sum"]).toMatchObject({ phase: "practice", code: "draft code", prediction: "lookup before insert", transferPassed: false });
+  });
+
+  it("caps assisted practice and reserves full mastery evidence for fresh transfer", () => {
+    const initial = createDefaultLearnerState();
+    initial.mastery.Arrays = { rating: 0.67, confidence: 0.6, attempts: 4, calibrationError: 0.1 };
+    const base = { id: "lesson-1", itemType: "lesson-practice", itemId: "array-scan", topic: "Arrays", correct: true, difficulty: 0.8, durationMs: 20_000, targetDurationMs: 60_000, predictedSuccess: 0.6, scaffoldLevel: 4, timed: false, createdAt: "2026-08-23T00:00:00Z" };
+    const assisted = reduceLearnerState(initial, { type: "attempt.record", payload: { ...base, assistance: "next-step", transfer: false } });
+    const independent = reduceLearnerState(initial, { type: "attempt.record", payload: { ...base, id: "lesson-2", itemType: "lesson-transfer", assistance: "none", scaffoldLevel: 0, transfer: true } });
+    expect(assisted.mastery.Arrays.rating).toBeLessThanOrEqual(0.68);
+    expect(independent.mastery.Arrays.rating).toBeGreaterThan(assisted.mastery.Arrays.rating);
+  });
 });

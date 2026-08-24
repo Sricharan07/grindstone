@@ -23,6 +23,8 @@ async function routeJudge(page: Page) {
 
 test.beforeEach(async ({ page }) => {
   let state = createDefaultLearnerState("E2E member");
+  state = reduceLearnerState(state, { type: "onboarding.complete", payload: { route: "product", target: "Product company", language: "python", dailyMinutes: 60, daysPerWeek: 6, implementationIntention: "If it is 8pm, then I train.", goal: "Pass a product-company coding screen.", stakeCents: null } });
+  state = reduceLearnerState(state, { type: "diagnostic.complete", payload: { route: "product", goal: "Pass a product-company coding screen.", topicPriors: { Percentages: 0.43, "Coding foundations": 0.4 }, completedAt: "2026-08-23T00:00:00Z" } });
   await page.route("**/api/state", async (route) => {
     if (route.request().method() === "PATCH") state = reduceLearnerState(state, route.request().postDataJSON() as LearnerAction);
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state, persistence: "memory" }) });
@@ -51,16 +53,18 @@ test("JSON APIs reject malformed requests without server errors", async ({ reque
   }
 });
 
-test("PRIMM preserves a wrong prediction through live reconciliation", async ({ page }) => {
-  await page.goto("/learn");
-  await page.getByLabel("What prints, and why?").fill("It prints [72, 81] because backup is a separate list.");
-  await page.getByRole("button", { name: "Commit prediction" }).click();
-  await page.getByRole("button", { name: "Run code" }).click();
-  await expect(page.getByRole("heading", { name: "Step through the notional machine" })).toBeVisible();
-  await expect(page.getByText("It prints [72, 81] because backup is a separate list.")).toBeVisible();
-  await page.getByRole("button", { name: "Next execution step" }).click();
-  await page.getByRole("button", { name: "Next execution step" }).click();
-  await expect(page.getByRole("button", { name: /Reconcile the gap/ })).toBeEnabled();
+test("integrated lesson moves from purpose to prediction to a saved editor", async ({ page }) => {
+  await routeJudge(page);
+  await page.goto("/learn?lesson=hashmap-two-sum");
+  await expect(page.getByRole("heading", { name: "Trade memory for constant-time lookup" })).toBeVisible();
+  await expect(page.getByText("Why interviewers care")).toBeVisible();
+  await page.getByRole("button", { name: /Check my understanding/ }).click();
+  await page.getByLabel("Your prediction and reasoning").fill("Lookup must happen before insertion so the current item cannot pair with itself, while duplicates at earlier indexes still work.");
+  await page.getByRole("button", { name: /Commit and open editor/ }).click();
+  await expect(page.getByText("Practice editor")).toBeVisible();
+  await page.getByRole("button", { name: /Run hidden tests/ }).click();
+  await expect(page.getByText("4/4 tests passed")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Explain your approach/ })).toBeEnabled();
 });
 
 test("timed drive expires the current section without an answer", async ({ page }) => {
@@ -71,14 +75,13 @@ test("timed drive expires the current section without an answer", async ({ page 
   await expect(page.getByText("Section 2/5")).toBeVisible({ timeout: 7_000 });
 });
 
-test("Parsons exercise supports a complete corrected ordering", async ({ page }) => {
-  await page.goto("/learn");
-  await page.getByRole("button", { name: "Remove line 4" }).click();
-  await page.getByRole("button", { name: "Move line 2 up" }).click();
-  await page.getByRole("button", { name: "Move line 4 up" }).click();
-  await page.getByRole("button", { name: "Move line 6 up" }).click();
-  await page.getByRole("button", { name: "Check order" }).click();
-  await expect(page.getByText("Structure is correct.")).toBeVisible();
+test("curriculum presents one four-week path in plain language", async ({ page }) => {
+  await page.goto("/curriculum");
+  await expect(page.getByRole("heading", { name: "Know what you are learning and why it matters." })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Week 1/ })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: /Week 3/ }).click();
+  await expect(page.getByRole("heading", { name: "Graph traversal" })).toBeVisible();
+  await expect(page.getByText("Explore relationships with visited state.")).toBeVisible();
 });
 
 test("solve loop requires an approach and opens the automatic follow-up", async ({ page }) => {
@@ -97,7 +100,7 @@ test("failed Friday gate produces an explicit lower-load recalibration", async (
   await routeQuestionBank(page, false);
   await page.goto("/sprint-review");
   await page.getByRole("button", { name: "Friday gate" }).click();
-  await page.getByRole("button", { name: /Start gate/ }).click();
+  await page.getByRole("button", { name: /Start checkpoint/ }).click();
   for (let index = 0; index < 8; index += 1) {
     await page.locator(".gate-options button").nth(3).click();
     await page.getByRole("button", { name: index === 7 ? /Grade gate/ : /Lock answer/ }).click();
@@ -145,7 +148,7 @@ test("practice uses an adaptive queue and records calibrated recognition evidenc
   await routeQuestionBank(page, true);
   await page.goto("/practice");
   await expect(page.getByText("Verified gate question 1")).toBeVisible();
-  expect(new URL(questionRequest).searchParams.get("topic")).toBe("Percentages");
+  expect(new URL(questionRequest).searchParams.get("topic")).toBe("Ratios");
   expect(new URL(questionRequest).searchParams.get("targetDifficulty")).toBe("0.43");
   await page.getByRole("button", { name: "Correct" }).click();
   await page.getByRole("button", { name: "70%" }).click();

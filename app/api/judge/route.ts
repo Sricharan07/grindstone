@@ -3,6 +3,7 @@ import { getJudge } from "@/lib/judge";
 import { buildProblemHarness, buildScalingHarness, parseScalingOutput } from "@/lib/judge/harness";
 import { inferComplexity } from "@/lib/judge/complexity";
 import { publicJudgeError } from "@/lib/judge/errors";
+import { buildLessonHarness, isLessonId } from "@/lib/judge/lesson-harness";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,7 @@ const requestSchema = z.object({
   stdin: z.string().max(64_000).optional(),
   timeoutMs: z.number().int().min(250).max(15_000).optional(),
   problem: z.enum(["two-sum", "two-sum-stream", "longest-consecutive", "first-unique", "balanced-brackets", "eligible-orders", "pagination-cursor", "retry-budget", "daily-report", "membership-cache", "min-window"]).optional(),
+  lessonId: z.string().refine(isLessonId, "Unknown lesson").optional(),
   measureComplexity: z.boolean().optional(),
 });
 
@@ -49,8 +51,14 @@ export async function POST(request: Request) {
   try {
     const health = await getJudge().health();
     if (!health.ok) throw new Error(health.detail);
-    const { problem, measureComplexity, ...runRequest } = parsed.data;
-    const result = await getJudge().run({ ...runRequest, code: problem ? buildProblemHarness(runRequest.language, runRequest.code, problem) : runRequest.code });
+    const { problem, lessonId, measureComplexity, ...runRequest } = parsed.data;
+    if (problem && lessonId) return Response.json({ error: "Choose a problem or a lesson, not both." }, { status: 400 });
+    const executable = lessonId
+      ? buildLessonHarness(runRequest.language, runRequest.code, lessonId)
+      : problem
+        ? buildProblemHarness(runRequest.language, runRequest.code, problem)
+        : runRequest.code;
+    const result = await getJudge().run({ ...runRequest, code: executable });
     let complexity;
     if (result.outcome === "ok" && problem && measureComplexity) {
       const scaling = await getJudge().run({ ...runRequest, timeoutMs: 12_000, code: buildScalingHarness(runRequest.language, runRequest.code, problem) });
