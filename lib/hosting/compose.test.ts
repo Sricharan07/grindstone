@@ -4,8 +4,10 @@ import { parse } from "yaml";
 
 type ComposeService = {
   build?: { target?: string };
+  depends_on?: Record<string, { condition?: string }>;
   environment?: Record<string, string>;
   ports?: string[];
+  volumes?: string[];
 };
 
 function compose(path: string) {
@@ -33,5 +35,12 @@ describe("production container topology", () => {
       PISTON_RUN_TIMEOUT: "15000",
       PISTON_RUN_MEMORY_LIMIT: "268435456",
     });
+  });
+
+  it("initializes Codex volume ownership before web and worker start", () => {
+    const services = compose("docker-compose.yml").services;
+    expect(services["codex-init"].volumes).toContain("codexhome:/codex-home");
+    expect(services.web.depends_on?.["codex-init"]?.condition).toBe("service_completed_successfully");
+    expect(services.worker.depends_on?.["codex-init"]?.condition).toBe("service_completed_successfully");
   });
 });

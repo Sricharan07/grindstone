@@ -116,6 +116,14 @@ services:
       judge: { condition: service_started }
     networks: [internal]
 
+  codex-init:
+    profiles: [host]
+    image: alpine:3.22
+    restart: "no"
+    command: ["sh", "-ec", "chown -R 1001:1001 /codex-home && chmod 700 /codex-home && if [ -f /codex-home/auth.json ]; then chmod 600 /codex-home/auth.json; fi"]
+    volumes:
+      - codexhome:/codex-home
+
   web:
     profiles: [host]
     build:
@@ -145,6 +153,7 @@ services:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
       piston-init: { condition: service_completed_successfully }
+      codex-init: { condition: service_completed_successfully }
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
@@ -175,6 +184,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       piston-init: { condition: service_completed_successfully }
+      codex-init: { condition: service_completed_successfully }
     networks: [internal, edge]
     volumes:
       - codexhome:/codex-home

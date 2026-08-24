@@ -70,13 +70,17 @@ class CodexAppServer {
   }
 
   private close(error: Error) {
-    this.lastError = error.message;
+    const detail = this.lastError;
+    const terminalError = detail && !error.message.includes(detail)
+      ? new Error(`${error.message}: ${detail}`)
+      : error;
+    this.lastError = terminalError.message;
     this.child = null;
     this.startPromise = null;
     this.threads.clear();
     for (const request of this.pending.values()) {
       clearTimeout(request.timer);
-      request.reject(error);
+      request.reject(terminalError);
     }
     this.pending.clear();
   }
