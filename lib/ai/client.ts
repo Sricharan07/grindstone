@@ -1,5 +1,3 @@
-import "server-only";
-
 import { getCodexAppServer } from "./codex-app-server";
 
 export function getAiClient() {

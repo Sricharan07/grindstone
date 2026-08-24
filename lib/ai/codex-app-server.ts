@@ -1,5 +1,3 @@
-import "server-only";
-
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
