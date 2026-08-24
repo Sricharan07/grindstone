@@ -1,80 +1,82 @@
-import { gateRecalibration, newReviewCard, REVIEW_GRADES, scheduleReview, updateMastery } from "@/lib/engine";
-import type { LearnerAction, LearnerState } from "./types";
+import { newReviewCard, REVIEW_GRADES, scheduleReview, updateMastery } from "@/lib/engine";
+import { initialsFor } from "./default-state";
+import type { LearnerAction, LearnerState, ReadinessDimension } from "./types";
 
-const xpForAttempt = (correct: boolean, difficulty: number, timed: boolean, priorRepetitions: number) => {
-  if (!timed) return 0;
-  const base = correct ? Math.round(30 + difficulty * 52) : 4;
-  const multiplier = Math.max(0.2, 1 / (priorRepetitions + 1));
-  return Math.max(1, Math.round(base * multiplier));
-};
+function xpForAttempt(correct: boolean, difficulty: number, timed: boolean, priorRepetitions: number, independent: boolean) {
+  if (!timed) return correct ? 5 : 0;
+  const base = correct ? Math.round(12 + difficulty * 20) : 2;
+  const repeatFactor = Math.max(0.2, 1 / (priorRepetitions + 1));
+  return Math.max(1, Math.round(base * repeatFactor * (independent ? 1 : 0.55)));
+}
 
-function nextStreakDays(days: number, lastDate: string | undefined, protectedDate: string) {
+function nextStreak(days: number, lastDate: string | undefined, protectedDate: string) {
   if (lastDate === protectedDate) return days;
   if (!lastDate) return 1;
   const gap = Math.round((Date.parse(`${protectedDate}T00:00:00Z`) - Date.parse(`${lastDate}T00:00:00Z`)) / 86_400_000);
   return gap === 1 ? days + 1 : 1;
 }
 
+function readinessDimension(topic: string, itemType: string): ReadinessDimension {
+  const value = `${topic} ${itemType}`.toLowerCase();
+  if (/aptitude|sql|ratio|percent|reason|data interpretation/.test(value)) return "Aptitude and SQL";
+  if (/ai|retrieval|embedding|rag|model|evaluation/.test(value)) return "Applied AI engineering";
+  if (/frontend|backend|api|database|full-stack|lab|system/.test(value)) return "Full-stack engineering";
+  if (/explain|communication|behavioral|defense/.test(value)) return "Interview communication";
+  return "Coding and debugging";
+}
+
 export function reduceLearnerState(state: LearnerState, action: LearnerAction): LearnerState {
-  const nextRevision = state.revision + 1;
+  const revision = state.revision + 1;
 
   switch (action.type) {
-    case "profile.update": {
-      const name = action.payload.name?.trim() || state.profile.name;
-      const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "GS";
+    case "onboarding.save":
+      return { ...state, revision, onboarding: { ...state.onboarding, ...action.payload } };
+
+    case "onboarding.complete": {
+      const name = action.payload.name.trim() || state.profile.name;
       return {
         ...state,
-        revision: nextRevision,
+        revision,
         profile: {
-          ...state.profile,
           name,
-          initials,
-          target: action.payload.target ?? state.profile.target,
-          preferredLanguage: action.payload.language ?? state.profile.preferredLanguage,
-          dailyMinutes: action.payload.dailyMinutes ?? state.profile.dailyMinutes,
-          daysPerWeek: action.payload.daysPerWeek ?? state.profile.daysPerWeek,
+          initials: initialsFor(name),
+          language: action.payload.language,
+          timezone: action.payload.timezone,
+          sessionTime: action.payload.sessionTime,
+          onboardingComplete: true,
         },
+        onboarding: { ...state.onboarding, ...action.payload, name, completed: true, step: 3 },
+        sprint: { ...state.sprint, status: "active", startedAt: action.payload.startedAt },
+      };
+    }
+
+    case "profile.update": {
+      const name = action.payload.name?.trim() || state.profile.name;
+      const profile = {
+        ...state.profile,
+        ...action.payload,
+        name,
+        initials: initialsFor(name),
+      };
+      return {
+        ...state,
+        revision,
+        profile,
         onboarding: {
           ...state.onboarding,
-          target: action.payload.target ?? state.onboarding.target,
-          language: action.payload.language ?? state.onboarding.language,
-          dailyMinutes: action.payload.dailyMinutes ?? state.onboarding.dailyMinutes,
-          daysPerWeek: action.payload.daysPerWeek ?? state.onboarding.daysPerWeek,
+          name,
+          language: profile.language,
+          timezone: profile.timezone,
+          sessionTime: profile.sessionTime,
         },
       };
     }
-    case "onboarding.save":
-      return {
-        ...state,
-        revision: nextRevision,
-        onboarding: { ...state.onboarding, ...action.payload },
-      };
-    case "onboarding.complete":
-      return {
-        ...state,
-        revision: nextRevision,
-        profile: {
-          ...state.profile,
-          route: action.payload.route,
-          target: action.payload.target,
-          preferredLanguage: action.payload.language,
-          dailyMinutes: action.payload.dailyMinutes,
-          daysPerWeek: action.payload.daysPerWeek,
-        },
-        sprint: { ...state.sprint, goal: action.payload.goal, status: "draft" },
-        commitment: { ...state.commitment, implementationIntention: action.payload.implementationIntention, stakeCents: action.payload.stakeCents },
-        onboarding: {
-          ...state.onboarding,
-          ...action.payload,
-          completed: true,
-          step: 3,
-        },
-      };
+
     case "lesson.save": {
       const current = state.lessons[action.payload.lessonId];
       const fallback = {
-        phase: "concept" as const,
-        language: state.profile.preferredLanguage,
+        stage: "understand" as const,
+        language: state.profile.language,
         code: "",
         transferCode: "",
         prediction: "",
@@ -86,7 +88,7 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
       };
       return {
         ...state,
-        revision: nextRevision,
+        revision,
         lessons: {
           ...state.lessons,
           [action.payload.lessonId]: {
@@ -98,42 +100,78 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
         },
       };
     }
+
+    case "lab.save": {
+      const id = String(action.payload.day);
+      const current = state.labs[id];
+      const fallback = {
+        notes: "",
+        evidence: "",
+        checks: [],
+        completed: false,
+        updatedAt: new Date().toISOString(),
+      };
+      return {
+        ...state,
+        revision,
+        labs: {
+          ...state.labs,
+          [id]: {
+            ...fallback,
+            ...current,
+            ...action.payload.progress,
+            updatedAt: action.payload.progress.updatedAt ?? new Date().toISOString(),
+          },
+        },
+      };
+    }
+
+    case "aptitude.save": {
+      const id = String(action.payload.day);
+      const current = state.aptitude[id];
+      const fallback = { currentIndex: 0, answers: {}, completed: false, updatedAt: new Date().toISOString() };
+      return {
+        ...state,
+        revision,
+        aptitude: {
+          ...state.aptitude,
+          [id]: {
+            ...fallback,
+            ...current,
+            ...action.payload.progress,
+            updatedAt: action.payload.progress.updatedAt ?? new Date().toISOString(),
+          },
+        },
+      };
+    }
+
     case "plan.toggle": {
       const exists = state.sprint.completedItems.includes(action.payload.itemId);
       const completedItems = exists
         ? state.sprint.completedItems.filter((id) => id !== action.payload.itemId)
         : [...state.sprint.completedItems, action.payload.itemId];
-      return { ...state, revision: nextRevision, sprint: { ...state.sprint, completedItems } };
+      return { ...state, revision, sprint: { ...state.sprint, completedItems } };
     }
-    case "checkin.standup":
-      return { ...state, revision: nextRevision, sprint: { ...state.sprint, standup: action.payload.body, standupDate: action.payload.completedAt.slice(0, 10) } };
-    case "checkin.evening": {
-      const protectedDate = action.payload.completedAt.slice(0, 10);
-      const floorMet = action.payload.completedMinutes >= state.commitment.dailyFloorMinutes;
-      const alreadyProtected = state.streak.lastProtectedDate === protectedDate;
-      return {
-        ...state,
-        revision: nextRevision,
-        sprint: { ...state.sprint, eveningCheckin: action.payload.body, eveningCheckinDate: protectedDate },
-        streak: { ...state.streak, days: floorMet ? nextStreakDays(state.streak.days, state.streak.lastProtectedDate, protectedDate) : state.streak.days, floorProtectedToday: floorMet || alreadyProtected, lastProtectedDate: floorMet ? protectedDate : state.streak.lastProtectedDate },
-      };
-    }
-    case "retro.save":
-      return { ...state, revision: nextRevision, sprint: { ...state.sprint, retro: action.payload.body, retroWeek: state.sprint.week } };
+
     case "gate.complete": {
-      const passed = action.payload.score >= 75;
-      const recalibration = passed ? undefined : gateRecalibration(action.payload.failedTopics, 18);
+      const passed = action.payload.score >= 70;
+      const gate = { week: action.payload.week, score: action.payload.score, passed, failedTopics: action.payload.failedTopics };
       return {
         ...state,
-        revision: nextRevision,
-        sprint: { ...state.sprint, gate: { week: state.sprint.week, score: action.payload.score, passed, failedTopics: action.payload.failedTopics, recalibration } },
-        xp: state.xp + (passed ? 180 : 35),
+        revision,
+        sprint: {
+          ...state.sprint,
+          gate,
+          gates: { ...state.sprint.gates, [String(action.payload.week)]: { ...gate, completedAt: action.payload.completedAt } },
+        },
+        xp: state.xp + 20,
       };
     }
+
     case "attempt.record": {
       const priorRepetitions = state.attempts.filter((attempt) => attempt.itemType === action.payload.itemType && attempt.itemId === action.payload.itemId).length;
       const previous = state.mastery[action.payload.topic] ?? { rating: 0.35, confidence: 0.2, attempts: 0, calibrationError: 0 };
-      const rawUpdated = updateMastery(previous, {
+      const measured = updateMastery(previous, {
         correct: action.payload.correct,
         difficulty: action.payload.difficulty,
         durationMs: action.payload.durationMs,
@@ -142,17 +180,14 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
         predictedSuccess: action.payload.predictedSuccess,
       });
       const assistance = action.payload.assistance ?? (action.payload.scaffoldLevel > 0 ? "concept" : "none");
-      const assisted = assistance !== "none";
-      const mayProveMastery = !assisted && Boolean(action.payload.transfer);
-      const updated = mayProveMastery
-        ? rawUpdated
-        : {
-            ...rawUpdated,
-            rating: Math.min(rawUpdated.rating, Math.max(previous.rating, 0.68)),
-            confidence: Math.min(rawUpdated.confidence, 0.72),
-          };
+      const independent = assistance === "none" && Boolean(action.payload.transfer) && action.payload.timed;
+      const updated = independent ? measured : {
+        ...measured,
+        rating: Math.min(measured.rating, Math.max(previous.rating, 0.68)),
+        confidence: Math.min(measured.confidence, 0.72),
+      };
       const reviewedAt = new Date(action.payload.createdAt);
-      const previousReview = (state.reviews ?? []).find((review) => review.itemType === action.payload.itemType && review.itemId === action.payload.itemId);
+      const previousReview = state.reviews.find((review) => review.itemType === action.payload.itemType && review.itemId === action.payload.itemId);
       const card = previousReview ? {
         ...previousReview.fsrs,
         due: new Date(previousReview.dueAt),
@@ -176,47 +211,59 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
           last_review: scheduled.last_review?.toISOString(),
         },
       };
+      const dimension = readinessDimension(action.payload.topic, action.payload.itemType);
+      const eligibleScore = independent ? Math.round(updated.rating * 100) : state.readiness[dimension];
+      const protectedDate = action.payload.createdAt.slice(0, 10);
+      const protectsStreak = action.payload.correct && (action.payload.timed || action.payload.transfer);
       return {
         ...state,
-        revision: nextRevision,
-        attempts: [action.payload, ...state.attempts].slice(0, 500),
-        reviews: [nextReview, ...(state.reviews ?? []).filter((review) => review.itemType !== action.payload.itemType || review.itemId !== action.payload.itemId)],
+        revision,
+        attempts: [{ ...action.payload, assistance }, ...state.attempts].slice(0, 500),
+        reviews: [nextReview, ...state.reviews.filter((review) => review.itemType !== action.payload.itemType || review.itemId !== action.payload.itemId)],
         mastery: { ...state.mastery, [action.payload.topic]: updated },
-        xp: state.xp + xpForAttempt(action.payload.correct, action.payload.difficulty, action.payload.timed, priorRepetitions),
+        readiness: { ...state.readiness, [dimension]: eligibleScore },
+        streak: protectsStreak ? {
+          ...state.streak,
+          days: nextStreak(state.streak.days, state.streak.lastProtectedDate, protectedDate),
+          protectedToday: true,
+          lastProtectedDate: protectedDate,
+        } : state.streak,
+        xp: state.xp + xpForAttempt(action.payload.correct, action.payload.difficulty, action.payload.timed, priorRepetitions, independent),
       };
     }
-    case "diagnostic.answer":
-      return { ...state, revision: nextRevision, diagnostic: { ...state.diagnostic, status: "in-progress", answers: { ...state.diagnostic.answers, [action.payload.questionId]: action.payload.answer } } };
-    case "diagnostic.complete":
-      return {
-        ...state,
-        revision: nextRevision,
-        profile: { ...state.profile, route: action.payload.route, diagnosticComplete: true },
-        sprint: { ...state.sprint, goal: action.payload.goal, status: "active", startedAt: action.payload.completedAt },
-        diagnostic: { ...state.diagnostic, status: "complete", topicPriors: action.payload.topicPriors },
-        mastery: { ...state.mastery, ...Object.fromEntries(Object.entries(action.payload.topicPriors).map(([topic, rating]) => [topic, { rating, confidence: 0.35, attempts: 1, calibrationError: 0 }])) },
-      };
-    case "drive.complete":
-      return { ...state, revision: nextRevision, driveResults: [action.payload, ...state.driveResults], xp: state.xp + Math.round(action.payload.score * 1.8) };
-    case "star.save": {
-      const stories = state.starStories.filter((story) => story.id !== action.payload.id);
-      return { ...state, revision: nextRevision, starStories: [action.payload, ...stories] };
-    }
+
     case "content.report":
-      return { ...state, revision: nextRevision, contentReports: [action.payload, ...state.contentReports] };
-    case "streak.freeze":
-      {
-        const month = action.payload.protectedAt.slice(0, 7);
-        const available = state.streak.freezeMonth === month ? state.streak.freezes : 2;
-        if (available < 1) return state;
-        return { ...state, revision: nextRevision, streak: { ...state.streak, freezes: available - 1, freezeMonth: month, floorProtectedToday: true, lastProtectedDate: action.payload.protectedAt.slice(0, 10) } };
-      }
-    case "sprint.next":
+      return { ...state, revision, contentReports: [action.payload, ...state.contentReports] };
+
+    case "streak.recover": {
+      if (state.streak.recoveryTokens < 1) return state;
       return {
         ...state,
-        revision: nextRevision,
-        profile: { ...state.profile, route: action.payload.route },
-        sprint: { number: state.sprint.number + 1, week: 1, day: 1, daysRemaining: 28, goal: action.payload.goal, status: "active", startedAt: action.payload.startedAt, completedItems: [] },
+        revision,
+        streak: {
+          ...state.streak,
+          recoveryTokens: state.streak.recoveryTokens - 1,
+          protectedToday: true,
+          lastProtectedDate: action.payload.protectedAt.slice(0, 10),
+        },
+      };
+    }
+
+    case "sprint.restart":
+      return {
+        ...state,
+        revision,
+        sprint: {
+          number: state.sprint.number + 1,
+          week: 1,
+          day: 1,
+          daysRemaining: 28,
+          goal: state.sprint.goal,
+          status: "active",
+          startedAt: action.payload.startedAt,
+          completedItems: [],
+          gates: {},
+        },
       };
   }
 }

@@ -17,12 +17,10 @@ export function sprintClock(sprint: SprintState, now = new Date()) {
 export function synchronizeTemporalState(state: LearnerState, now = new Date()): LearnerState {
   const clock = sprintClock(state.sprint, now);
   const today = now.toISOString().slice(0, 10);
-  const month = today.slice(0, 7);
-  const freezes = state.streak.freezeMonth === month ? state.streak.freezes : 2;
   return {
     ...state,
     reviews: state.reviews ?? [],
     sprint: { ...state.sprint, ...clock },
-    streak: { ...state.streak, freezes, freezeMonth: month, floorProtectedToday: state.streak.lastProtectedDate === today },
+    streak: { ...state.streak, protectedToday: state.streak.lastProtectedDate === today },
   };
 }

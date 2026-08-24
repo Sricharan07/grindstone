@@ -2,86 +2,69 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, BookOpen, Check, Clock3, Code2, Target, Timer } from "@/components/icons";
-import { CURRICULUM } from "@/lib/content/lessons";
+import { ArrowRight, Check, Clock3, Code2, Lock, Target, Trophy } from "@/components/icons";
+import { activitiesFor, SPRINT_DAYS, WEEK_OUTCOMES } from "@/lib/curriculum/catalog";
 import { cn } from "@/lib/utils";
 import { useLearnerState } from "./state/learner-state-provider";
 
-const weekPurpose = [
-  "Build the language and data-structure foundations used in almost every coding round.",
-  "Learn the four most common ways to remove repeated work from linear-data problems.",
-  "Move from flat data into nested structure, traversal, and priority-based selection.",
-  "Integrate the patterns, recover from mistakes, and rehearse the real interview conditions.",
-];
-
-const kindLabel = { learn: "Learn and code", practice: "Recall and apply", checkpoint: "Evidence check", mock: "Interview rehearsal" };
-const kindIcon = { learn: BookOpen, practice: Code2, checkpoint: Target, mock: Timer };
-
-export function CurriculumMap() {
+export function CurriculumMap({ initialDay }: { initialDay?: number }) {
   const { state } = useLearnerState();
-  const [week, setWeek] = useState<1 | 2 | 3 | 4>(state.sprint.status === "active" ? state.sprint.week : 1);
-  const sessions = CURRICULUM.filter((session) => session.week === week);
-  const completedCount = CURRICULUM.filter((session) => session.lessonId && state.lessons[session.lessonId]?.transferPassed).length;
+  const [selectedDay, setSelectedDay] = useState(initialDay ?? state.sprint.day);
+  const selected = SPRINT_DAYS[selectedDay - 1];
+  const activities = activitiesFor(selected);
+  const selectedComplete = activities.every((activity) => state.sprint.completedItems.includes(activity.id));
+  const selectedLocked = selected.kind === "gate" && selected.day > state.sprint.day;
+  const selectedHref = selected.lessonSlug ? `/learn/${selected.lessonSlug}` : selected.kind === "gate" ? `/session/${selected.day}/gate` : `/session/${selected.day}/lab`;
 
   return (
-    <div className="curriculum-map curriculum-path">
-      <header className="workspace-heading curriculum-heading">
-        <div>
-          <p className="context-line">Your four-week interview path</p>
-          <h1>Know what you are learning and why it matters.</h1>
-          <p>Each week teaches a small group of patterns, then asks you to recall and transfer them without the worked example.</p>
-        </div>
-        <div className="curriculum-progress" aria-label={`${completedCount} of 12 coding lessons independently completed`}>
-          <strong>{completedCount}/12</strong>
-          <span>coding lessons proven without help</span>
-        </div>
+    <div className="curriculum-page">
+      <header className="page-intro">
+        <div><p className="section-label">Your complete 28-day path</p><h1>Know what you are learning, building, and proving.</h1><p>The order is fixed so each concept supports the next engineering task. Future days are visible; assessment content stays hidden until its evidence window opens.</p></div>
+        <div className="curriculum-total"><strong>{state.sprint.day}</strong><span>of 28 days reached</span></div>
       </header>
 
-      <div className="week-tabs" role="tablist" aria-label="Curriculum week">
-        {([1, 2, 3, 4] as const).map((value) => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={week === value}
-            className={cn(week === value && "week-tab--active")}
-            key={value}
-            onClick={() => setWeek(value)}
-          >
-            <span>Week {value}</span>
-            <small>{value === 1 ? "Foundations" : value === 2 ? "Linear patterns" : value === 3 ? "Traversal" : "Interview mode"}</small>
-          </button>
-        ))}
-      </div>
-
-      <section className="week-intro" aria-labelledby="week-title">
-        <span className="week-number">0{week}</span>
-        <div>
-          <p className="context-line">Week {week} outcome</p>
-          <h2 id="week-title">{weekPurpose[week - 1]}</h2>
+      <div className="curriculum-layout">
+        <div className="week-bands">
+          {WEEK_OUTCOMES.map((week) => {
+            const days = SPRINT_DAYS.filter((day) => day.week === week.week);
+            return (
+              <section key={week.week} className="week-band" aria-labelledby={`week-${week.week}-title`}>
+                <header><div><span>Week {week.week}</span><h2 id={`week-${week.week}-title`}>{week.shortTitle}</h2><p>{week.outcome}</p></div><small>{days.filter((day) => activitiesFor(day).every((activity) => state.sprint.completedItems.includes(activity.id))).length}/7 complete</small></header>
+                <ol>
+                  {days.map((day) => {
+                    const dayActivities = activitiesFor(day);
+                    const complete = dayActivities.every((activity) => state.sprint.completedItems.includes(activity.id));
+                    const current = day.day === state.sprint.day;
+                    const locked = day.kind === "gate" && day.day > state.sprint.day;
+                    return (
+                      <li key={day.day}>
+                        <button type="button" onClick={() => setSelectedDay(day.day)} className={cn(selectedDay === day.day && "is-selected", complete && "is-complete", current && "is-current")}>
+                          <span className="day-index">{complete ? <Check size={15} /> : day.day}</span>
+                          <span className="day-copy"><small>{day.kind === "learn" ? "Learn and apply" : day.kind === "gate" ? "Evidence gate" : day.kind === "final" ? "Debrief and continue" : "Consolidate and recover"}</small><strong>{day.title}</strong><em>{day.patterns.join(" · ")}</em></span>
+                          <span className="day-status">{locked ? <Lock size={15} /> : current ? "Today" : complete ? "Done" : day.day < state.sprint.day ? "Needs review" : "Upcoming"}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+            );
+          })}
         </div>
-      </section>
 
-      <ol className="curriculum-sessions">
-        {sessions.map((session) => {
-          const Icon = kindIcon[session.kind];
-          const complete = Boolean(session.lessonId && state.lessons[session.lessonId]?.transferPassed);
-          const href = session.lessonId ? `/learn?lesson=${session.lessonId}` : session.kind === "mock" ? "/mock" : "/practice";
-          return (
-            <li key={session.id} className={cn(complete && "curriculum-session--complete")}>
-              <span className="session-order">{complete ? <Check size={17} /> : session.order}</span>
-              <div className="session-copy">
-                <span><Icon size={15} /> {kindLabel[session.kind]}</span>
-                <h3>{session.title}</h3>
-                <p>{session.purpose}</p>
-              </div>
-              <span className="session-duration"><Clock3 size={15} /> {session.minutes} min</span>
-              <Link href={href} className="button button--secondary">
-                {complete ? "Review" : session.lessonId ? "Start" : "Open"} <ArrowRight size={16} />
-              </Link>
-            </li>
-          );
-        })}
-      </ol>
+        <aside className="day-detail" aria-label={`Day ${selected.day} details`}>
+          <header><span className={cn("day-kind", `day-kind--${selected.kind}`)}>{selected.kind === "learn" ? <Code2 size={16} /> : selected.kind === "gate" ? <Trophy size={16} /> : <Target size={16} />}{selected.kind === "learn" ? "Learning day" : selected.kind === "gate" ? "Evidence gate" : selected.kind === "final" ? "Final consolidation" : "Consolidation"}</span><h2>Day {selected.day}: {selected.title}</h2><p>{selected.outcome}</p></header>
+          <dl>
+            <div><dt>Interview focus</dt><dd>{selected.patterns.join(", ")}</dd></div>
+            <div><dt>Problems</dt><dd>{selected.problems.length ? selected.problems.join(" and ") : "No new core problem"}</dd></div>
+            <div><dt>Build</dt><dd>{selected.lab}</dd></div>
+            <div><dt>Aptitude</dt><dd>{selected.aptitude}</dd></div>
+            <div><dt>Proof</dt><dd>{selected.evidence}</dd></div>
+          </dl>
+          <div className="day-detail__time"><Clock3 size={16} /><span><strong>150 minutes</strong><small>{activities.length} ordered activities</small></span></div>
+          {selectedLocked ? <p className="locked-note"><Lock size={16} /> Assessment content opens on Day {selected.day} so the result remains valid.</p> : <Link href={selectedHref} className="button button--primary">{selectedComplete ? "Review day" : selected.day === state.sprint.day ? "Resume today" : "Open day"} <ArrowRight size={17} /></Link>}
+        </aside>
+      </div>
     </div>
   );
 }

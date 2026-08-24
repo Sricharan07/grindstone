@@ -1,15 +1,12 @@
-export type InterviewRoute = "foundations" | "service-it" | "product" | "big-tech" | "non-tech";
+import type { LearningLanguage } from "@/lib/learning/catalog";
 
 export interface LearnerProfile {
   name: string;
   initials: string;
-  route: InterviewRoute;
-  preferredLanguage: "python" | "java" | "cpp";
-  target: string;
-  dailyMinutes: number;
-  daysPerWeek: number;
-  driveDate?: string;
-  diagnosticComplete: boolean;
+  language: LearningLanguage;
+  timezone: string;
+  sessionTime: string;
+  onboardingComplete: boolean;
 }
 
 export interface SprintState {
@@ -21,23 +18,19 @@ export interface SprintState {
   status: "draft" | "active" | "complete";
   startedAt?: string;
   completedItems: string[];
-  standup?: string;
-  standupDate?: string;
-  eveningCheckin?: string;
-  eveningCheckinDate?: string;
-  retro?: string;
-  retroWeek?: number;
   gate?: {
     week: number;
     score: number;
     passed: boolean;
     failedTopics: string[];
-    recalibration?: {
-      reteachTopics: string[];
-      fadeAdjustment: number;
-      newMaterialMinutes: number;
-    };
   };
+  gates: Record<string, {
+    week: number;
+    score: number;
+    passed: boolean;
+    failedTopics: string[];
+    completedAt: string;
+  }>;
 }
 
 export interface MasteryEvidence {
@@ -46,6 +39,8 @@ export interface MasteryEvidence {
   attempts: number;
   calibrationError: number;
 }
+
+export type AssistanceLevel = "none" | "socratic" | "concept" | "pseudocode" | "next-step" | "completion";
 
 export interface AttemptEvidence {
   id: string;
@@ -58,7 +53,7 @@ export interface AttemptEvidence {
   targetDurationMs: number;
   predictedSuccess?: number;
   scaffoldLevel: number;
-  assistance?: "none" | "socratic" | "concept" | "pseudocode" | "next-step" | "completion";
+  assistance?: AssistanceLevel;
   transfer?: boolean;
   timed: boolean;
   communicationScore?: number;
@@ -70,41 +65,45 @@ export interface AttemptEvidence {
 export interface OnboardingDraft {
   step: number;
   completed: boolean;
-  experience: "never" | "codes" | "dsa" | "strong";
-  route: InterviewRoute;
-  target: string;
-  language: LearnerProfile["preferredLanguage"];
-  dailyMinutes: number;
-  daysPerWeek: number;
-  implementationIntention: string;
-  trigger: string;
-  action: string;
-  goal: string;
-  stakeCents: number | null;
+  name: string;
+  language: LearningLanguage;
+  timezone: string;
+  sessionTime: string;
 }
 
+export type LessonStage = "understand" | "predict" | "code" | "explain" | "transfer" | "complete";
+
 export interface LessonProgress {
-  phase: "concept" | "predict" | "example" | "practice" | "explain" | "transfer" | "complete";
-  language: LearnerProfile["preferredLanguage"];
+  stage: LessonStage;
+  language: LearningLanguage;
   code: string;
   transferCode: string;
   prediction: string;
   explanation: string;
-  hintsUsed: Array<NonNullable<AttemptEvidence["assistance"]>>;
+  hintsUsed: AssistanceLevel[];
   testsPassed: boolean;
   transferPassed: boolean;
   updatedAt: string;
 }
 
-export interface StarStory {
-  id: string;
-  title: string;
-  situation: string;
-  task: string;
-  action: string;
-  result: string;
-  metrics: string;
-  principles: string[];
+export interface LabProgress {
+  notes: string;
+  evidence: string;
+  checks: boolean[];
+  completed: boolean;
+  updatedAt: string;
+}
+
+export interface AptitudeProgress {
+  currentIndex: number;
+  answers: Record<string, {
+    selectedIndex: number;
+    answerIndex: number;
+    correct: boolean;
+    explanation: string;
+  }>;
+  completed: boolean;
+  updatedAt: string;
 }
 
 export interface ReviewEvidence {
@@ -125,48 +124,40 @@ export interface ReviewEvidence {
   };
 }
 
+export type ReadinessDimension = "Coding and debugging" | "Full-stack engineering" | "Applied AI engineering" | "Aptitude and SQL" | "Interview communication";
+
 export interface LearnerState {
   revision: number;
   profile: LearnerProfile;
   sprint: SprintState;
-  commitment: {
-    implementationIntention: string;
-    dailyFloorMinutes: number;
-    stakeCents: number | null;
+  streak: {
+    days: number;
+    recoveryTokens: number;
+    protectedToday: boolean;
+    lastProtectedDate?: string;
   };
-  streak: { days: number; freezes: number; floorProtectedToday: boolean; lastProtectedDate?: string; freezeMonth?: string };
   mastery: Record<string, MasteryEvidence>;
   attempts: AttemptEvidence[];
   reviews: ReviewEvidence[];
-  readiness: Record<string, number>;
+  readiness: Record<ReadinessDimension, number>;
   xp: number;
-  diagnostic: {
-    status: "not-started" | "in-progress" | "complete";
-    answers: Record<string, string>;
-    topicPriors: Record<string, number>;
-  };
   onboarding: OnboardingDraft;
   lessons: Record<string, LessonProgress>;
-  driveResults: Array<{ pack: string; score: number; sections: Record<string, number>; completedAt: string }>;
-  starStories: StarStory[];
+  labs: Record<string, LabProgress>;
+  aptitude: Record<string, AptitudeProgress>;
   contentReports: Array<{ itemId: string; reason: string; createdAt: string }>;
 }
 
 export type LearnerAction =
   | { type: "onboarding.save"; payload: Partial<OnboardingDraft> }
-  | { type: "profile.update"; payload: { name?: string; target?: string; language?: LearnerProfile["preferredLanguage"]; dailyMinutes?: number; daysPerWeek?: number } }
-  | { type: "onboarding.complete"; payload: { route: InterviewRoute; target: string; language: LearnerProfile["preferredLanguage"]; dailyMinutes: number; daysPerWeek: number; implementationIntention: string; goal: string; stakeCents: number | null } }
+  | { type: "onboarding.complete"; payload: { name: string; language: LearningLanguage; timezone: string; sessionTime: string; startedAt: string } }
+  | { type: "profile.update"; payload: { name?: string; language?: LearningLanguage; timezone?: string; sessionTime?: string } }
   | { type: "lesson.save"; payload: { lessonId: string; progress: Partial<LessonProgress> } }
-  | { type: "plan.toggle"; payload: { itemId: string } }
-  | { type: "checkin.standup"; payload: { body: string; completedAt: string } }
-  | { type: "checkin.evening"; payload: { body: string; completedMinutes: number; completedAt: string } }
-  | { type: "retro.save"; payload: { body: string } }
-  | { type: "gate.complete"; payload: { score: number; failedTopics: string[] } }
+  | { type: "lab.save"; payload: { day: number; progress: Partial<LabProgress> } }
+  | { type: "aptitude.save"; payload: { day: number; progress: Partial<AptitudeProgress> } }
+  | { type: "plan.toggle"; payload: { itemId: string; completedAt?: string } }
+  | { type: "gate.complete"; payload: { week: number; score: number; failedTopics: string[]; completedAt: string } }
   | { type: "attempt.record"; payload: AttemptEvidence }
-  | { type: "diagnostic.answer"; payload: { questionId: string; answer: string } }
-  | { type: "diagnostic.complete"; payload: { route: InterviewRoute; goal: string; topicPriors: Record<string, number>; completedAt: string } }
-  | { type: "drive.complete"; payload: { pack: string; score: number; sections: Record<string, number>; completedAt: string } }
-  | { type: "star.save"; payload: StarStory }
   | { type: "content.report"; payload: { itemId: string; reason: string; createdAt: string } }
-  | { type: "streak.freeze"; payload: { protectedAt: string } }
-  | { type: "sprint.next"; payload: { goal: string; route: InterviewRoute; startedAt: string } };
+  | { type: "streak.recover"; payload: { protectedAt: string } }
+  | { type: "sprint.restart"; payload: { startedAt: string } };

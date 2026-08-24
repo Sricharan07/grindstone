@@ -1,5 +1,2 @@
-import type { Metadata } from "next";
-import { SprintReview } from "@/components/sprint-review";
-
-export const metadata: Metadata = { title: "Sprint review" };
-export default function SprintReviewPage() { return <SprintReview />; }
+import { redirect } from "next/navigation";
+export default function SprintReviewPage() { redirect("/progress"); }

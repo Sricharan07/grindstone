@@ -1,155 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import {
-  ArrowDown,
-  ArrowRight,
-  ArrowUp,
-  BrainCircuit,
-  CalendarDays,
-  Check,
-  Gauge,
-  History,
-  Target,
-} from "@/components/icons";
 import { useState } from "react";
-import { calibrationPoints, readinessEvidence, routeReadiness } from "@/lib/product/evidence";
+import { ArrowRight, BrainCircuit, CalendarDays, Check, Flame, Gauge, History, Target, Trophy } from "@/components/icons";
+import { calibrationPoints, readinessSummary } from "@/lib/product/evidence";
 import { cn } from "@/lib/utils";
 import { ProgressBar } from "./ui/progress-bar";
+import { useCohort } from "./state/use-cohort";
 import { useLearnerState } from "./state/learner-state-provider";
-import type { LearnerState } from "@/lib/product/types";
-import { masteryPercent } from "@/lib/engine";
+
+type View = "readiness" | "evidence" | "scoreboard";
 
 export function ProgressDashboard() {
   const { state } = useLearnerState();
-  const [view, setView] = useState<"readiness" | "mastery" | "calibration">("readiness");
+  const cohort = useCohort();
+  const [view, setView] = useState<View>("readiness");
+  const [scoreboardEnabled, setScoreboardEnabled] = useState(false);
+  const summary = readinessSummary(state);
+  const independent = state.attempts.filter((attempt) => attempt.transfer && attempt.timed && (attempt.assistance ?? "none") === "none");
+  const calibrations = calibrationPoints(state);
+  const lessonCount = Object.values(state.lessons).filter((lesson) => lesson.stage === "complete").length;
+  const problemCount = new Set(state.attempts.filter((attempt) => attempt.itemType === "problem" && attempt.correct).map((attempt) => attempt.itemId)).size;
 
-  return (
-    <div className="progress-dashboard">
-      <header className="workspace-heading">
-        <div><p className="context-line">Observed performance only</p><h2>Know what the room will see.</h2><p>Readiness combines timed correctness, speed, mastery, communication, calibration, and the latest gate.</p></div>
-        <span className="status-pill"><CalendarDays size={16} /> Current sprint</span>
-      </header>
+  return <div className="progress-page">
+    <header className="page-intro"><div><p className="section-label">Observed performance, not a motivational guess</p><h1>Know what you can reproduce alone.</h1><p>Readiness only rises from timed, no-help transfer evidence. Guided work still builds mastery, but it cannot certify interview performance.</p></div><div className="readiness-number"><strong>{summary.enoughEvidence ? summary.score : "--"}</strong><span>{summary.band}<small>{summary.confidence}</small></span></div></header>
+    <nav className="segmented-control progress-nav" aria-label="Progress view">{(["readiness", "evidence", "scoreboard"] as View[]).map((item) => <button type="button" key={item} className={cn(view === item && "is-active")} onClick={() => setView(item)}>{item === "readiness" ? <Gauge size={16} /> : item === "evidence" ? <History size={16} /> : <Trophy size={16} />}{item[0].toUpperCase() + item.slice(1)}</button>)}</nav>
 
-      <div className="mode-tabs progress-tabs" role="tablist" aria-label="Progress view">
-        {(["readiness", "mastery", "calibration"] as const).map((tab) => (
-          <button key={tab} type="button" role="tab" aria-selected={view === tab} className={cn(view === tab && "mode-tab--active")} onClick={() => setView(tab)}>
-            {tab === "readiness" ? <Gauge size={17} /> : tab === "mastery" ? <Target size={17} /> : <BrainCircuit size={17} />}
-            {tab[0].toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
+    {view === "readiness" && <div className="readiness-layout">
+      <section className="readiness-breakdown"><header><div><p className="section-label">Weighted evidence</p><h2>Five parts of the interview</h2></div><span>{independent.length} eligible attempts</span></header><div className="dimension-list">{summary.dimensions.map((dimension) => <div key={dimension.name}><div><strong>{dimension.name}</strong><span>{Math.round(dimension.weight * 100)}% weight · {dimension.observations} observations</span></div><ProgressBar value={dimension.value} label={`${dimension.name} ${dimension.value}%`} tone={dimension.value >= 70 ? "success" : dimension.value >= 45 ? "primary" : "warning"} /><b>{dimension.observations >= 2 ? `${dimension.value}%` : "Need 2"}</b></div>)}</div></section>
+      <aside className="readiness-proof"><p className="section-label"><Target size={15} /> Evidence requirements</p><h2>{summary.enoughEvidence ? "The score is supported." : "The product is still collecting proof."}</h2><ul><li className={cn(independent.length >= 10 && "is-met")}><Check size={15} /> 10+ independent timed attempts</li><li className={cn(Boolean(state.sprint.gate) && "is-met")}><Check size={15} /> One mixed evidence gate</li><li className={cn(summary.dimensions.every((item) => item.observations >= 2) && "is-met")}><Check size={15} /> Two observations in every dimension</li></ul><Link href="/" className="button button--primary">Resume today <ArrowRight size={16} /></Link></aside>
+      <section className="progress-stats"><div><Flame size={18} /><span><strong>{state.streak.days} days</strong><small>Current protected streak</small></span></div><div><BrainCircuit size={18} /><span><strong>{lessonCount} / 20</strong><small>Concepts transferred</small></span></div><div><Check size={18} /><span><strong>{problemCount} / 150</strong><small>Problems passed</small></span></div><div><CalendarDays size={18} /><span><strong>Day {state.sprint.day} / 28</strong><small>Current sprint position</small></span></div></section>
+    </div>}
 
-      {view === "readiness" && <ReadinessView state={state} />}
-      {view === "mastery" && <MasteryView state={state} />}
-      {view === "calibration" && <CalibrationView state={state} />}
-    </div>
-  );
-}
+    {view === "evidence" && <div className="evidence-layout"><section className="evidence-list"><header><div><p className="section-label">Most recent first</p><h2>Attempt log</h2></div><span>{state.attempts.length} total</span></header>{state.attempts.length ? state.attempts.slice(0, 40).map((attempt) => <article key={attempt.id}><span className={cn("evidence-outcome", attempt.correct && "is-correct")}>{attempt.correct ? <Check size={15} /> : "×"}</span><div><strong>{attempt.topic}</strong><span>{attempt.itemType.replaceAll("-", " ")} · {attempt.timed ? "timed" : "untimed"} · {(attempt.assistance ?? "none").replaceAll("-", " ")}</span></div><time>{new Date(attempt.createdAt).toLocaleDateString([], { month: "short", day: "numeric" })}</time></article>) : <div className="empty-state"><History size={22} /><h3>No attempts yet</h3><p>Your first lesson run will appear here.</p></div>}</section><aside className="calibration-summary"><p className="section-label">Confidence calibration</p><h2>{calibrations.length ? `${calibrations.length} predictions compared` : "Commit confidence before timed work"}</h2><p>Accurate confidence helps you choose the right interview pace and know when to ask clarifying questions.</p>{calibrations.slice(0, 6).map((point) => <div key={`${point.topic}-${point.predicted}`}><span>{point.topic}</span><strong>{point.predicted}% → {point.actual}%</strong></div>)}</aside></div>}
 
-function ReadinessView({ state }: { state: LearnerState }) {
-  const { attempts, topicMastery, timedAccuracy, speed, communication, calibration, gate, score: routeScore } = readinessEvidence(state);
-  const outlook = routeReadiness(state);
-  const axes = [{ label: "Topic mastery", value: topicMastery, weight: "30%", note: topicMastery >= 70 ? "Above bar" : "Building" }, { label: "Timed accuracy", value: timedAccuracy, weight: "22%", note: timedAccuracy >= 75 ? "Above bar" : "Needs reps" }, { label: "Speed", value: speed, weight: "14%", note: speed >= 70 ? "Stable" : "Focus next" }, { label: "Communication", value: communication, weight: "12%", note: communication >= 70 ? "Stable" : "Focus next" }, { label: "Calibration", value: calibration, weight: "8%", note: calibration >= 75 ? "Calibrated" : "Overconfident" }, { label: "Recent gate", value: gate, weight: "14%", note: state.sprint.gate?.passed ? "Passed" : state.sprint.gate ? "Recalibrated" : "No evidence" }];
-  return (
-    <div className="readiness-view">
-      <section className="readiness-summary">
-        <div className="readiness-dial" style={{ "--score": routeScore } as React.CSSProperties}>
-          <span><strong>{routeScore}</strong><small>{state.profile.route.replace("-", " ")} route</small></span>
-        </div>
-        <div className="readiness-summary__copy">
-          <span className="status-pill"><History size={14} /> {attempts.length} timed attempts</span>
-          <h3>{routeScore >= 75 ? "The evidence clears the current bar." : "The next weakness is visible."}</h3>
-          <p>{communication < 60 ? "Communication remains the weakest independent axis in timed attempts." : "The plan is training the lowest measured axis before adding difficulty."}</p>
-          <div className="readiness-evidence"><span><Check size={15} /> {attempts.length} timed attempts</span><span><Check size={15} /> {state.sprint.gate ? 1 : 0} mixed gate</span><span><Check size={15} /> {state.driveResults.length} drive runs</span></div>
-        </div>
-      </section>
-
-      <section className="score-axis-section">
-        <div className="section-heading-row"><div><h3>What makes up {routeScore}</h3><p>Mastery 30% · accuracy 22% · speed 14% · communication 12% · calibration 8% · gate 14%.</p></div></div>
-        <div className="score-axis-list">
-          {axes.map((axis) => (
-            <div className="score-axis-row" key={axis.label}>
-              <div><span>{axis.label}</span><small>{axis.weight} weight</small></div>
-              <ProgressBar value={axis.value} label={`${axis.label} ${axis.value}%`} tone={axis.value >= 75 ? "success" : axis.value >= 60 ? "primary" : "warning"} />
-              <strong>{axis.value}</strong><em>{axis.note}</em>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="company-readiness">
-        <div className="section-heading-row"><div><h3>Route outlook</h3><p>Same evidence, different interview bars.</p></div></div>
-        <div className="company-readiness__rows">
-          {outlook.map((item) => (
-            <div key={item.company}><span>{item.company}</span><strong>{item.score}</strong><ProgressBar value={item.score} label={`${item.company} readiness`} tone={item.score >= 80 ? "success" : item.score >= 60 ? "primary" : "warning"} /><em>{attempts.length}</em><small>{item.label}</small></div>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function MasteryView({ state }: { state: LearnerState }) {
-  const topics = Object.entries(state.mastery).map(([topic, evidence]) => ({ topic, attempts: evidence.attempts, value: masteryPercent(evidence), confidence: Math.round(evidence.confidence * 100) })).sort((left, right) => left.value - right.value);
-  const weakest = topics[0];
-  return (
-    <div className="mastery-view">
-      <section className="mastery-map">
-        <div className="section-heading-row"><div><h3>Topic mastery</h3><p>Ratings account for help used, time, difficulty, and confidence accuracy.</p></div><span className="status-pill"><History size={14} /> {state.attempts.length} attempts</span></div>
-        <div className="mastery-table">
-          <header><span>Topic</span><span>Evidence</span><span>Mastery</span><span>Confidence</span><span /></header>
-          {topics.map((topic) => (
-            <div key={topic.topic}>
-              <strong>{topic.topic}</strong>
-              <span>{topic.attempts} attempts</span>
-              <div><ProgressBar value={topic.value} label={`${topic.topic} mastery ${topic.value}%`} tone={topic.value >= 70 ? "success" : topic.value >= 50 ? "primary" : "warning"} /><strong>{topic.value}%</strong></div>
-              <em>{topic.confidence}%</em>
-              <Link href="/practice" className="icon-button" aria-label={`Practice ${topic.topic}`}><ArrowRight size={16} /></Link>
-            </div>
-          ))}
-          {!topics.length && <div><strong>No mastery evidence yet</strong><span>Complete the diagnostic, then submit a timed attempt.</span></div>}
-        </div>
-      </section>
-      <aside className="mastery-focus">
-        <span className="status-pill status-pill--warning"><Target size={14} /> Named weakness</span>
-        <h3>{weakest ? weakest.topic : "Establish your baseline."}</h3>
-        <p>{weakest ? `${weakest.topic} is currently the lowest measured topic. The next plan will schedule it before new difficulty.` : "The diagnostic creates priors without pretending you already have practice evidence."}</p>
-        <div><span>Current mastery</span><strong>{weakest?.value ?? 0}%</strong><ProgressBar value={weakest?.value ?? 0} label="Lowest topic mastery" tone="warning" /></div>
-        <Link href={state.profile.diagnosticComplete ? "/practice" : "/diagnostic"} className="button button--primary">{state.profile.diagnosticComplete ? "Train this weakness" : "Run diagnostic"} <ArrowRight size={16} /></Link>
-      </aside>
-    </div>
-  );
-}
-
-function CalibrationView({ state }: { state: LearnerState }) {
-  const points = calibrationPoints(state);
-  const gap = points.length ? Math.round(points.reduce((sum, point) => sum + Math.abs(point.predicted - point.actual), 0) / points.length) : 0;
-  const over = [...points].sort((left, right) => (right.predicted - right.actual) - (left.predicted - left.actual))[0];
-  const under = [...points].sort((left, right) => (left.predicted - left.actual) - (right.predicted - right.actual))[0];
-  const closest = [...points].sort((left, right) => Math.abs(left.predicted - left.actual) - Math.abs(right.predicted - right.actual))[0];
-  return (
-    <div className="calibration-view">
-      <section className="calibration-chart-section">
-        <div className="section-heading-row"><div><h3>Predicted vs actual</h3><p>Points on the diagonal are calibrated. Above it means overconfidence.</p></div><span className="status-pill status-pill--warning">{gap}% average gap</span></div>
-        <div className="calibration-chart" aria-label="Calibration scatter plot">
-          <div className="calibration-diagonal" />
-          {[0, 25, 50, 75, 100].map((value) => <span key={`x-${value}`} className="axis-x" style={{ left: `${value}%` }}>{value}</span>)}
-          {[0, 25, 50, 75, 100].map((value) => <span key={`y-${value}`} className="axis-y" style={{ bottom: `${value}%` }}>{value}</span>)}
-          {points.map((point, index) => (
-            <span key={`${point.topic}-${index}`} className="calibration-point" style={{ left: `${point.actual}%`, bottom: `${point.predicted}%` }} title={`${point.topic}: predicted ${point.predicted}%, actual ${point.actual}%`}><span>{point.topic}</span></span>
-          ))}
-          {!points.length && <p>No timed predictions yet. Calibration begins with your first practice answer.</p>}
-        </div>
-        <div className="chart-labels"><span>Actual performance →</span><span>Predicted success →</span></div>
-      </section>
-      <aside className="calibration-insights">
-        <h3>Calibration signals</h3>
-        {under && <div><span className="insight-icon insight-icon--down"><ArrowDown size={16} /></span><p><strong>{under.topic} may be stronger than it feels.</strong>Prediction {under.predicted}%; outcome {under.actual}%.</p></div>}
-        {over && <div><span className="insight-icon insight-icon--up"><ArrowUp size={16} /></span><p><strong>{over.topic} needs a confidence reset.</strong>Prediction {over.predicted}%; outcome {over.actual}%.</p></div>}
-        {closest && <div><span className="insight-icon"><Target size={16} /></span><p><strong>{closest.topic} is closest to calibrated.</strong>The gap is {Math.abs(closest.predicted - closest.actual)} points.</p></div>}
-        {!points.length && <p>Commit a prediction before each timed attempt to unlock this view.</p>}
-      </aside>
-    </div>
-  );
+    {view === "scoreboard" && <section className="scoreboard-panel"><header><div><p className="section-label">Optional friend cohort</p><h2>Weekly consistency, not public pressure.</h2><p>The board ranks earned XP for the current week. Readiness scores and solution content stay private.</p></div><label className="toggle"><input type="checkbox" checked={scoreboardEnabled} onChange={(event) => setScoreboardEnabled(event.target.checked)} /><span /> Show board</label></header>{scoreboardEnabled ? <div className="scoreboard-table">{cohort.members.map((member, index) => <div key={member.id} className={cn(member.self && "is-self")}><span>{index + 1}</span><i>{member.initials}</i><strong>{member.name}{member.self ? " (you)" : ""}</strong><span><Flame size={14} /> {member.streak}</span><b>{member.xp} XP</b></div>)}</div> : <div className="scoreboard-closed"><Trophy size={24} /><h3>The board is hidden.</h3><p>Turn it on only when comparison helps you return to the work.</p></div>}</section>}
+  </div>;
 }

@@ -1,25 +1,50 @@
 # Grindstone
 
-Grindstone is a self-hosted four-week interview sprint engine for a private cohort. It turns a starting check and interview target into one clear next task, a guided curriculum, integrated coding lessons, scheduled recall, mock interviews, and measured progress.
+Grindstone is a self-hosted 28-day interview preparation product for a small private cohort. It combines coding patterns, full-stack engineering, applied AI, SQL and aptitude, and interview communication in one fixed 150-minute daily path.
+
+The learner chooses Python or Java. Every learning day moves through the same loop: understand with plain-language explanations, generated concept art, a deterministic visualization, and one selected video; predict; code in the built-in editor; explain; then solve again without help. Luna is available inside the lesson and problem editor through the owner's dedicated Codex login.
 
 ## Run locally
 
-Requires Node 22, pnpm through Corepack, and Docker Desktop. Create `.env` and set `POSTGRES_PASSWORD` plus a matching local `DATABASE_URL`, for example `postgres://grindstone:<url-encoded-password>@localhost:5433/grindstone`.
+Requires Node 22 and pnpm through Corepack. The interface can run with browser or in-memory persistence; PostgreSQL, Redis, Docker, and the judge are required for the full shared-cohort deployment.
 
 ```bash
 corepack enable
 pnpm install
 cp .env.example .env
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). With `AUTH_REQUIRED` unset, Grindstone uses the local development member and works without Google login.
+
+For the full stack:
+
+```bash
 docker compose up -d db redis sqlsandbox
 pnpm db:migrate
 pnpm db:seed
 pnpm judge:smoke
 mkdir -p "$HOME/.grindstone/codex-home"
 CODEX_HOME="$HOME/.grindstone/codex-home" codex login --device-auth
-pnpm dev
 ```
 
-Set `GRINDSTONE_CODEX_HOME=$HOME/.grindstone/codex-home` in `.env`, then open [http://localhost:3000](http://localhost:3000). A new account begins with setup, resumes every answer, and unlocks training only after the starting check. The curated path contains 24 sessions and 12 integrated coding lessons in Python, Java, and C++. Judge, SQL, question, AI, and rubric failures are shown as failures; the app never invents a passing result.
+Set `GRINDSTONE_CODEX_HOME=$HOME/.grindstone/codex-home` in `.env`. This must be a dedicated owner-controlled Codex home, not a browser token or a copied ChatGPT cookie. The hosted profile limits concurrent and daily Luna turns and keeps all credentials on the server.
+
+To invite friends, configure Google OAuth, set `AUTH_REQUIRED=true`, and add comma-separated addresses to `ALLOWED_EMAILS`. Each approved account receives a separate profile, sprint state, attempt history, and optional scoreboard identity.
+
+## Product routes
+
+- `/` - one next action, today's 150-minute session, streak, and sprint position
+- `/curriculum` - all 28 days, weekly outcomes, gates, consolidation days, and project evidence
+- `/learn/[slug]` - concept, art, visualization, selected video, Luna, editor, explanation, and independent transfer
+- `/session/[day]/[activity]` - timed aptitude, daily Evidence Desk labs, and no-help weekly gates
+- `/problems` - 150 runnable packages, including the scheduled Core 40
+- `/progress` - evidence-backed readiness, attempt history, streaks, calibration, and opt-in friend scoreboard
+- `/settings` - name, Python or Java, session time, timezone, persistence, and Luna status
+- `/onboarding` - resumable name, language, and schedule setup
+- `/login` - allowlisted Google sign-in when hosted authentication is enabled
+
+Older shared links such as `/practice`, `/solve`, `/mock`, and `/league` redirect into the simpler route structure.
 
 ## Verify
 
@@ -28,37 +53,15 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
-pnpm content:audit
 pnpm test:e2e
+pnpm content:audit
 pnpm judge:smoke
 ```
 
-`judge:smoke` requires Docker. Local development uses the ARM-friendly `docker-run` adapter; the hosted Compose profile explicitly uses Piston and must also pass this test on the real Windows host before untrusted code execution is enabled for the cohort.
-
-The hosted readiness probe is `GET /api/health`. It returns HTTP 200 only when Postgres, Redis, the judge, and the isolated SQL sandbox are all reachable.
-
-## Product routes
-
-- `/` — one resume/start action first, then the daily plan and sprint context
-- `/curriculum` — the plain-language four-week path and its interview purpose
-- `/learn` — concept, worked example, prediction, editor, tests, explanation, and fresh transfer
-- `/diagnostic` — a resumable starting check that sets the first difficulty
-- `/practice` — calibrated MCQ, recognition drills, debugging, and SQL
-- `/solve` — CodeMirror coding room with judge feedback and follow-ups
-- `/mock` — a timed product-company coding screen with rubric debrief
-- `/drive` — TCS NQT, Infosys, Wipro, Accenture, and big-tech simulations
-- `/lab` — read-only SQL, planted codebase bugs, and AI-fluency rounds
-- `/design` — staged system-design canvas and LLD rehearsal
-- `/hr` — STAR evidence, answer, resume, and group-discussion practice
-- `/sprint-review` — evening check-in, Friday gate, and Saturday retro
-- `/progress` — readiness, topic mastery, and calibration evidence
-- `/league` — weekly XP league and accountability feed
-- `/onboarding` — route selection, commitment contract, and diagnostic setup
-
-Import an editable LeetCode export with `pnpm content:import -- /absolute/path/to/leetcode-export.json`. Imported metadata stays `verified`, and therefore hidden from learners, until an executable harness exists. Queue a verified content batch with `pnpm content:generate -- "Percentages" quantitative 20` after Postgres, Redis, the worker, judge, and the dedicated owner Codex login are configured.
+`test:e2e` starts an isolated development server unless `PLAYWRIGHT_BASE_URL` is supplied. `judge:smoke` needs Docker. The readiness probe is `GET /api/health`; it returns 200 only when the configured production dependencies are reachable.
 
 ## Architecture
 
-The App Router UI is under `app/` and `components/`. The adaptive engine lives in `lib/engine`, judge adapters in `lib/judge`, content verification in `lib/content`, the Drizzle schema in `db/schema.ts`, and overnight jobs in `worker/`.
+The Next.js App Router UI is in `app/` and `components/`. The canonical 28-day plan is in `lib/curriculum`, the 20 complete learning packages in `lib/learning`, the 150-problem library in `lib/problems`, adaptive evidence logic in `lib/engine` and `lib/product`, isolated execution in `lib/judge`, and persistence in `lib/server` plus `db/`.
 
-The hosted Docker profile forces authentication on, refuses to boot without Google OAuth, an email allowlist, a dedicated owner ChatGPT login, and a public URL. AI runs through the local Codex app-server with Luna at extra-high reasoning and no model fallback. The stack also includes Postgres 17, an isolated SQL sandbox, Redis/BullMQ, Piston with a three-language bootstrap, the worker, rotating backups, and Cloudflare Tunnel. See the [product plan](docs/PRODUCT_PLAN.md), [Windows hosting](docs/WINDOWS_HOSTING.md), and [pedagogy](docs/PEDAGOGY.md).
+The product specification is [docs/PRD.md](docs/PRD.md). Hosted setup details are in [docs/WINDOWS_HOSTING.md](docs/WINDOWS_HOSTING.md).

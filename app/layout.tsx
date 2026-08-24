@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: "Grindstone",
     template: "%s · Grindstone",
   },
-  description: "A four-week interview sprint engine for deliberate daily practice.",
+  description: "A 28-day AI-enabled full-stack interview sprint in Python or Java.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

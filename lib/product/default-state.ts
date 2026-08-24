@@ -1,62 +1,55 @@
 import type { LearnerState } from "./types";
 
-function initials(name: string) {
+export function initialsFor(name: string) {
   const value = name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
   return value || "GS";
 }
 
 export function createDefaultLearnerState(name = "Member"): LearnerState {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   return {
     revision: 0,
     profile: {
       name,
-      initials: initials(name),
-      route: "foundations",
-      preferredLanguage: "python",
-      target: "Choose your interview target",
-      dailyMinutes: 60,
-      daysPerWeek: 6,
-      diagnosticComplete: false,
+      initials: initialsFor(name),
+      language: "python",
+      timezone,
+      sessionTime: "20:00",
+      onboardingComplete: false,
     },
     sprint: {
       number: 1,
       week: 1,
       day: 1,
       daysRemaining: 28,
-      goal: "Complete onboarding and establish a measured baseline",
+      goal: "Become interview-ready as an AI-enabled full-stack software engineer",
       status: "draft",
       completedItems: [],
+      gates: {},
     },
-    commitment: {
-      implementationIntention: "Set your implementation intention during onboarding.",
-      dailyFloorMinutes: 20,
-      stakeCents: null,
-    },
-    streak: { days: 0, freezes: 2, floorProtectedToday: false },
+    streak: { days: 0, recoveryTokens: 2, protectedToday: false },
     mastery: {},
     attempts: [],
     reviews: [],
-    readiness: { "Service IT": 0, "Product screening": 0, "Big tech loop": 0 },
+    readiness: {
+      "Coding and debugging": 0,
+      "Full-stack engineering": 0,
+      "Applied AI engineering": 0,
+      "Aptitude and SQL": 0,
+      "Interview communication": 0,
+    },
     xp: 0,
-    diagnostic: { status: "not-started", answers: {}, topicPriors: {} },
     onboarding: {
       step: 0,
       completed: false,
-      experience: "codes",
-      route: "foundations",
-      target: "",
+      name,
       language: "python",
-      dailyMinutes: 60,
-      daysPerWeek: 6,
-      implementationIntention: "",
-      trigger: "it is 8pm and I am at my desk",
-      action: "I start my Grindstone session",
-      goal: "Build interview-ready problem solving fundamentals",
-      stakeCents: null,
+      timezone,
+      sessionTime: "20:00",
     },
     lessons: {},
-    driveResults: [],
-    starStories: [],
+    labs: {},
+    aptitude: {},
     contentReports: [],
   };
 }

@@ -15,8 +15,8 @@ interface LearnerStateValue {
 }
 
 const LearnerStateContext = createContext<LearnerStateValue | null>(null);
-const storageKey = "grindstone-learner-state-v2";
-const legacyStorageKey = "grindstone-learner-state-v1";
+const storageKey = "grindstone-learner-state-v3";
+const legacyStorageKeys = ["grindstone-learner-state-v2", "grindstone-learner-state-v1"];
 
 export function LearnerStateProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<LearnerState>(createDefaultLearnerState);
@@ -25,7 +25,7 @@ export function LearnerStateProvider({ children }: { children: React.ReactNode }
   const syncQueue = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
-    const local = window.localStorage.getItem(storageKey) ?? window.localStorage.getItem(legacyStorageKey);
+    const local = window.localStorage.getItem(storageKey) ?? legacyStorageKeys.map((key) => window.localStorage.getItem(key)).find(Boolean);
     if (local) {
       try {
         const parsed = JSON.parse(local) as LearnerState;

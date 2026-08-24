@@ -1,7 +1,6 @@
 "use client";
 
 import { indentWithTab } from "@codemirror/commands";
-import { cpp } from "@codemirror/lang-cpp";
 import { java } from "@codemirror/lang-java";
 import { python } from "@codemirror/lang-python";
 import {
@@ -32,12 +31,11 @@ import {
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { useEffect, useRef, useState } from "react";
-import type { Language } from "@/lib/judge/types";
+import type { LearningLanguage } from "@/lib/learning/catalog";
 
 const languageExtension = {
   python: python(),
   java: java(),
-  cpp: cpp(),
 };
 
 class GhostTextWidget extends WidgetType {
@@ -74,7 +72,7 @@ export function CodeEditor({
   ghostText,
 }: {
   value: string;
-  language: Language;
+  language: LearningLanguage;
   onChange: (value: string) => void;
   readOnly?: boolean;
   ghostText?: string;

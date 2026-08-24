@@ -1,37 +1,45 @@
-import type { LearnerState } from "./types";
-import { masteryPercent } from "@/lib/engine";
+import type { LearnerState, ReadinessDimension } from "./types";
 
-const average = (values: number[]) => values.length
-  ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
-  : 0;
+export const READINESS_WEIGHTS: Record<ReadinessDimension, number> = {
+  "Coding and debugging": 0.3,
+  "Full-stack engineering": 0.25,
+  "Applied AI engineering": 0.2,
+  "Aptitude and SQL": 0.15,
+  "Interview communication": 0.1,
+};
 
-const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
-
-export function readinessEvidence(state: LearnerState) {
-  const attempts = state.attempts.filter((attempt) => attempt.timed);
-  const topicMastery = average(Object.values(state.mastery).map(masteryPercent));
-  const timedAccuracy = average(attempts.map((attempt) => attempt.correct ? 100 : 0));
-  const speed = average(attempts.map((attempt) => Math.min(100, (attempt.targetDurationMs / Math.max(attempt.durationMs, 1)) * 100)));
-  const communication = average(attempts.flatMap((attempt) => attempt.communicationScore === undefined ? [] : [attempt.communicationScore]));
-  const calibration = average(attempts.flatMap((attempt) => attempt.predictedSuccess === undefined ? [] : [100 - Math.abs(attempt.predictedSuccess * 100 - (attempt.correct ? 100 : 0))]));
-  const gate = state.sprint.gate?.score ?? 0;
-  const score = attempts.length
-    ? clamp(topicMastery * 0.3 + timedAccuracy * 0.22 + speed * 0.14 + communication * 0.12 + calibration * 0.08 + gate * 0.14)
-    : 0;
-  return { attempts, topicMastery, timedAccuracy, speed, communication, calibration, gate, score };
+function evidenceDimension(topic: string, itemType: string): ReadinessDimension {
+  const value = `${topic} ${itemType}`.toLowerCase();
+  if (/aptitude|sql|ratio|percent|reason|data interpretation/.test(value)) return "Aptitude and SQL";
+  if (/ai|retrieval|embedding|rag|model|evaluation/.test(value)) return "Applied AI engineering";
+  if (/frontend|backend|api|database|full-stack|lab|system/.test(value)) return "Full-stack engineering";
+  if (/explain|communication|behavioral|defense/.test(value)) return "Interview communication";
+  return "Coding and debugging";
 }
+export function readinessSummary(state: LearnerState) {
+  const eligible = state.attempts.filter((attempt) => attempt.timed && attempt.transfer && (attempt.assistance ?? "none") === "none");
+  const counts = Object.fromEntries(Object.keys(READINESS_WEIGHTS).map((dimension) => [dimension, 0])) as Record<ReadinessDimension, number>;
+  for (const attempt of eligible) counts[evidenceDimension(attempt.topic, attempt.itemType)] += 1;
 
-export function routeReadiness(state: LearnerState) {
-  const { score, attempts } = readinessEvidence(state);
-  const diagnosticFactor = state.profile.diagnosticComplete && attempts.length ? 1 : 0;
-  return [
-    { company: "Service IT", score: clamp((score + 10) * diagnosticFactor) },
-    { company: "Product screening", score: clamp(score * diagnosticFactor) },
-    { company: "Big tech loop", score: clamp((score - 15) * diagnosticFactor) },
-  ].map((item) => ({
-    ...item,
-    label: item.score >= 80 ? "Ready" : item.score >= 60 ? "On track" : item.score > 0 ? "Building" : "No evidence",
+  const dimensions = (Object.keys(READINESS_WEIGHTS) as ReadinessDimension[]).map((name) => ({
+    name,
+    value: Math.max(0, Math.min(100, Math.round(state.readiness[name]))),
+    weight: READINESS_WEIGHTS[name],
+    observations: counts[name],
   }));
+  const score = Math.round(dimensions.reduce((sum, dimension) => sum + dimension.value * dimension.weight, 0));
+  const enoughEvidence = dimensions.every((dimension) => dimension.observations >= 2) && Boolean(state.sprint.gate);
+  const confidence = !enoughEvidence ? "Not enough evidence" : eligible.length >= 15 && state.sprint.gate?.passed ? "High" : "Medium";
+  const band = !enoughEvidence
+    ? "Building evidence"
+    : score >= 80 && dimensions.every((dimension) => dimension.value >= 65) && state.sprint.gate?.passed
+      ? "Ready to schedule"
+      : score >= 65
+        ? "Interviewing with gaps"
+        : score >= 50
+          ? "Screening practice"
+          : "Building foundations";
+  return { eligible, dimensions, score, confidence, band, enoughEvidence };
 }
 
 export function calibrationPoints(state: LearnerState) {

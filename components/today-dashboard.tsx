@@ -4,317 +4,135 @@ import Link from "next/link";
 import {
   ArrowRight,
   Check,
-  ChevronRight,
-  CircleDot,
-  Clock3,
   Code2,
   Flame,
-  Gauge,
-  MessageSquareText,
-  Pause,
-  Play,
   RotateCcw,
-  Sparkles,
   Target,
-  Timer,
   Trophy,
 } from "@/components/icons";
-import { useEffect, useState } from "react";
+import { readinessSummary } from "@/lib/product/evidence";
 import { dailyPlanFor } from "@/lib/product/daily-plan";
-import { routeReadiness } from "@/lib/product/evidence";
-import { cn, formatMinutes } from "@/lib/utils";
-import { Avatar } from "./ui/avatar";
-import { ProgressBar } from "./ui/progress-bar";
+import { cn } from "@/lib/utils";
 import { useLearnerState } from "./state/learner-state-provider";
-import { relativeTime, useCohort } from "./state/use-cohort";
-import { nextLessonId } from "@/lib/content/lessons";
+import { ProgressBar } from "./ui/progress-bar";
 
-const itemIcon = {
-  review: RotateCcw,
-  recognition: CircleDot,
-  concept: Sparkles,
-  coding: Code2,
-  aptitude: Target,
-  debugging: Gauge,
-  mock: Timer,
-  "review-sheet": MessageSquareText,
+const activityIcons: Record<string, typeof Code2> = {
+  Recall: RotateCcw,
+  Retain: RotateCcw,
+  Review: RotateCcw,
+  Aptitude: Target,
+  Learn: Code2,
+  Solve: Code2,
+  Build: Code2,
+  Explain: Target,
+  Interview: Trophy,
+  Defend: Trophy,
+  Debrief: RotateCcw,
+  Repair: RotateCcw,
+  "Re-solve": Code2,
+  Polish: Code2,
+  Plan: Target,
+  "Warm up": RotateCcw,
 };
 
 export function TodayDashboard() {
   const { state, dispatch } = useLearnerState();
-  const { activity } = useCohort();
-  const [sessionRunning, setSessionRunning] = useState(false);
-  const [sessionSeconds, setSessionSeconds] = useState(0);
-  const [now] = useState(() => new Date());
-  const todayKey = now.toISOString().slice(0, 10);
-  const [standupOpen, setStandupOpen] = useState(true);
-  const [standup, setStandup] = useState(() => state.sprint.standupDate === todayKey ? state.sprint.standup ?? "" : "");
-  const standupSaved = state.sprint.standupDate === todayKey;
-  const todayPlan = dailyPlanFor(state, now);
-  const completed = state.sprint.completedItems.filter((id) => todayPlan.items.some((item) => item.id === id));
-  const readiness = routeReadiness(state);
-  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(now);
-  const mondayIndex = (now.getDay() + 6) % 7;
-  const daysToGate = (5 - now.getDay() + 7) % 7;
-  const sprintDays = ["M", "T", "W", "T", "F", "S", "S"].map((label, index) => ({
-    label,
-    status: index < mondayIndex ? "done" : index === mondayIndex ? "current" : index === 4 ? "gate" : index === 6 ? "rest" : "future",
-  }));
+  const plan = dailyPlanFor(state);
+  const completed = new Set(state.sprint.completedItems.filter((id) => plan.items.some((item) => item.id === id)));
+  const nextItem = plan.items.find((item) => !completed.has(item.id));
+  const completedMinutes = plan.items.filter((item) => completed.has(item.id)).reduce((sum, item) => sum + item.minutes, 0);
+  const remainingMinutes = plan.scheduledMinutes - completedMinutes;
+  const completion = Math.round((completed.size / Math.max(1, plan.items.length)) * 100);
+  const readiness = readinessSummary(state);
+  const [startHour = 20, startMinute = 0] = state.profile.sessionTime.split(":").map(Number);
+  const finishMinutes = (startHour * 60 + startMinute + remainingMinutes) % (24 * 60);
+  const finishHour = Math.floor(finishMinutes / 60);
+  const finishAt = `${finishHour % 12 || 12}:${String(finishMinutes % 60).padStart(2, "0")} ${finishHour >= 12 ? "PM" : "AM"}`;
 
-  useEffect(() => {
-    if (!sessionRunning) return;
-    const timer = window.setInterval(() => setSessionSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [sessionRunning]);
-
-  const progress = Math.round((completed.length / Math.max(todayPlan.items.length, 1)) * 100);
-  const completedLessons = new Set(Object.entries(state.lessons).filter(([, value]) => value.transferPassed).map(([id]) => id));
-  const lessonId = nextLessonId(completedLessons);
-  const nextItem = todayPlan.items.find((item) => !completed.includes(item.id));
-  const hrefFor = (kind: keyof typeof itemIcon) => kind === "coding" ? "/solve" : kind === "concept" ? `/learn?lesson=${lessonId}` : kind === "mock" ? "/mock" : "/practice";
-  const nextHref = nextItem ? hrefFor(nextItem.kind) : "/practice";
-  const lessonDraft = state.lessons[lessonId];
-  const nextIsResume = nextItem?.kind === "concept" && lessonDraft && lessonDraft.phase !== "concept";
-
-  function toggleItem(id: string) {
-    dispatch({ type: "plan.toggle", payload: { itemId: id } });
-  }
-
-  if (state.sprint.status === "draft") {
-    const setupComplete = state.onboarding.completed;
-    return <div className="diagnostic-runner diagnostic-result">
-      <span className="result-mark"><Target size={24} /></span>
-      <p className="context-line">Setup · {setupComplete ? "Step 2 of 2" : "Step 1 of 2"}</p>
-      <h1>{setupComplete ? "Find the right starting difficulty." : "Tell Grindstone what you are preparing for."}</h1>
-      <p>{setupComplete ? "Your target and schedule are saved. Finish the short starting check and today’s first lesson will be ready." : "Choose your interview target, practice language, and available time. Every answer saves automatically."}</p>
-      <Link href={setupComplete ? "/diagnostic" : "/onboarding"} className="button button--primary">{setupComplete ? "Resume starting check" : "Continue setup"} <ArrowRight size={17} /></Link>
-    </div>;
+  if (!state.profile.onboardingComplete) {
+    return (
+      <section className="welcome-setup">
+        <div className="welcome-setup__copy">
+          <p className="section-label">Your interview preparation starts here</p>
+          <h1>One 28-day path. One clear task at a time.</h1>
+          <p>Choose Python or Java, set your daily time, and Day 1 will teach the first concept inside the editor with Luna beside you.</p>
+          <Link href="/onboarding" className="button button--primary">Set up my sprint <ArrowRight size={17} /></Link>
+        </div>
+        <dl className="welcome-setup__facts">
+          <div><dt>Daily</dt><dd>150 min</dd></div>
+          <div><dt>Core problems</dt><dd>40</dd></div>
+          <div><dt>Capstone</dt><dd>Evidence Desk</dd></div>
+          <div><dt>AI tutor</dt><dd>Luna on demand</dd></div>
+        </dl>
+      </section>
+    );
   }
 
   if (state.sprint.status === "complete") {
-    return <div className="diagnostic-runner diagnostic-result">
-      <span className="result-mark"><Trophy size={24} /></span>
-      <p className="context-line">Sprint {state.sprint.number} complete</p>
-      <h1>The four-week evidence is closed.</h1>
-      <p>Review the measured gains before starting another clean four-week block toward the same route.</p>
-      <div className="diagnostic-result__goal"><span>Completed goal</span><strong>{state.sprint.goal}</strong><small>{state.attempts.length} attempts · {state.xp} XP</small></div>
-      <button type="button" className="button button--primary" onClick={() => dispatch({ type: "sprint.next", payload: { goal: state.sprint.goal, route: state.profile.route, startedAt: new Date().toISOString() } })}>Start sprint {state.sprint.number + 1} <ArrowRight size={17} /></button>
-      <Link href="/progress" className="button button--secondary">Review evidence</Link>
-    </div>;
+    return (
+      <section className="sprint-complete">
+        <span><Trophy size={24} /></span>
+        <p className="section-label">Sprint {state.sprint.number} complete</p>
+        <h1>Your evidence is preserved.</h1>
+        <p>Review the final readiness confidence and continuation plan before opening another 28-day block.</p>
+        <div><Link href="/progress" className="button button--primary">Review evidence <ArrowRight size={17} /></Link><button type="button" className="button button--secondary" onClick={() => dispatch({ type: "sprint.restart", payload: { startedAt: new Date().toISOString() } })}>Start another sprint</button></div>
+      </section>
+    );
   }
 
   return (
-    <div className="today-layout">
-      <div className="today-content">
-        <section className="next-action" aria-labelledby="next-action-title">
-          <div className="next-action__marker"><Play size={20} fill="currentColor" /></div>
-          <div className="next-action__copy">
-            <p className="context-line">Your next task</p>
-            <h1 id="next-action-title">{nextItem?.title ?? "Complete a short retrieval set"}</h1>
-            <p>{nextItem?.why ?? "Bring back the most useful ideas before they fade."}</p>
-            <dl>
-              <div><dt>What</dt><dd>{nextItem?.topic ?? "Scheduled recall"}</dd></div>
-              <div><dt>Time</dt><dd>{nextItem?.minutes ?? 15} minutes</dd></div>
-              <div><dt>Proof</dt><dd>{nextItem?.kind === "concept" ? "Pass a fresh transfer without AI help" : nextItem?.kind === "coding" ? "Pass hidden tests and explain complexity" : "Answer from memory, then review errors"}</dd></div>
-            </dl>
-          </div>
-          <Link href={nextHref} className="button button--primary">{nextIsResume ? "Resume task" : "Start task"} <ArrowRight size={17} /></Link>
-        </section>
+    <div className="today-page">
+      <header className="today-intro">
+        <div>
+          <p className="section-label">Day {plan.day.day} · Week {plan.day.week} · {plan.day.kind === "learn" ? "Learning day" : plan.day.kind === "gate" ? "Evidence gate" : "Consolidation day"}</p>
+          <h1>{plan.day.title}</h1>
+          <p>{plan.day.outcome}</p>
+        </div>
+        <p className="today-why"><Target size={18} /><span><strong>Why this matters</strong>{plan.day.why}</span></p>
+      </header>
 
-        <section className="today-heading">
-          <div>
-            <p className="context-line">{weekday} · Sprint {state.sprint.number}, week {state.sprint.week}</p>
-            <h2>Keep the pressure useful.</h2>
-            <p>{todayPlan.message}</p>
-          </div>
-          <div className="today-heading__meta">
-            <span><Clock3 size={15} /> {formatMinutes(todayPlan.scheduledMinutes)}</span>
-            <span><Target size={15} /> {todayPlan.items.length} reps</span>
-          </div>
-        </section>
+      <section className="resume-panel" aria-labelledby="resume-title">
+        <div className="resume-panel__number">{nextItem ? plan.items.indexOf(nextItem) + 1 : <Check size={22} />}</div>
+        <div>
+          <p className="section-label">{nextItem ? "Your next task" : "Today's evidence is complete"}</p>
+          <h2 id="resume-title">{nextItem?.title ?? "Close the session while the notes are fresh"}</h2>
+          <p>{nextItem ? `${nextItem.minutes} minutes · Proof: ${nextItem.proof}` : plan.day.evidence}</p>
+        </div>
+        {nextItem ? <Link href={nextItem.href} className="button button--primary">{state.lessons[plan.day.lessonSlug ?? ""] ? "Resume" : "Start"} <ArrowRight size={17} /></Link> : <Link href="/progress" className="button button--primary">Review evidence <ArrowRight size={17} /></Link>}
+      </section>
 
-        <section className="burndown" aria-labelledby="burndown-title">
-          <div className="section-heading-row">
-            <div>
-              <h3 id="burndown-title">Four-week line</h3>
-              <p>{Math.max(0, state.sprint.day - 1)} training days banked. Friday&apos;s mixed gate is next.</p>
-            </div>
-              <strong>{Math.round(((28 - state.sprint.daysRemaining) / 28) * 100)}%</strong>
-          </div>
-          <div className="burndown-weeks">
-            {[1, 2, 3, 4].map((week) => (
-              <div key={week} className={cn("burndown-week", week === state.sprint.week && "burndown-week--current")}>
-                <span>Week {week}</span>
-                <div className="burndown-days" aria-label={`Week ${week}`}>
-                  {Array.from({ length: 7 }, (_, day) => {
-                    const globalDay = (week - 1) * 7 + day + 1;
-                    const status = globalDay < state.sprint.day ? "done" : globalDay === state.sprint.day ? "current" : globalDay % 7 === 5 ? "gate" : "future";
-                    return <i key={day} className={`burndown-day burndown-day--${status}`} title={`Day ${globalDay}: ${status}`} />;
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="week-cadence">
-            {sprintDays.map((day, index) => (
-              <span key={`${day.label}-${index}`} className={`cadence-day cadence-day--${day.status}`}>
-                <i>{day.label}</i>
-                <small>{index === mondayIndex ? "Today" : index === 4 ? "Gate" : ""}</small>
-              </span>
-            ))}
-          </div>
-        </section>
+      <section className="today-status" aria-label="Sprint status">
+        <div><span>Today</span><strong>{completedMinutes} / {plan.scheduledMinutes} min</strong><small>{remainingMinutes ? `Finish near ${finishAt}` : "Complete"}</small></div>
+        <div><span>Week</span><strong>{state.sprint.week} of 4</strong><small>{state.sprint.daysRemaining} days remaining</small></div>
+        <div><span>Streak</span><strong><Flame size={16} /> {state.streak.days} days</strong><small>{state.streak.protectedToday ? "Protected today" : "A timed pass protects today"}</small></div>
+        <div><span>Readiness</span><strong>{readiness.enoughEvidence ? readiness.score : "--"}</strong><small>{readiness.confidence}</small></div>
+      </section>
 
-        <section className="standup-strip">
-          <button
-            type="button"
-            className="standup-strip__prompt"
-            onClick={() => setStandupOpen((open) => !open)}
-            aria-expanded={standupOpen}
-          >
-            <span className={cn("check-disc", standupSaved && "check-disc--done")}>
-              {standupSaved ? <Check size={16} /> : <MessageSquareText size={16} />}
-            </span>
-            <span>
-              <strong>{standupSaved ? "Intent locked" : "60-second standup"}</strong>
-              <small>{standupSaved ? state.sprint.standup : "Name the win that makes today count."}</small>
-            </span>
-            <ChevronRight size={17} className={cn(standupOpen && "rotate-90")} />
-          </button>
-          {standupOpen && !standupSaved && (
-            <form
-              className="standup-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!standup.trim()) return;
-                dispatch({ type: "checkin.standup", payload: { body: standup.trim(), completedAt: new Date().toISOString() } });
-                setStandupOpen(false);
-              }}
-            >
-              <label htmlFor="standup">Today counts if I…</label>
-              <div>
-                <input
-                  id="standup"
-                  value={standup}
-                  onChange={(event) => setStandup(event.target.value)}
-                  placeholder="finish the timed solve without a hint"
-                />
-                <button type="submit" className="button button--secondary" disabled={!standup.trim()}>
-                  Commit
-                </button>
-              </div>
-            </form>
-          )}
-        </section>
+      <section className="session-plan" aria-labelledby="session-plan-title">
+        <header>
+          <div><h2 id="session-plan-title">Today&apos;s session</h2><p>{plan.message}</p></div>
+          <span>{completed.size} of {plan.items.length} activities</span>
+        </header>
+        <ProgressBar value={completion} label={`Today's session ${completion}% complete`} />
 
-        <section className="daily-plan" aria-labelledby="daily-plan-title">
-          <div className="section-heading-row">
-            <div>
-              <h3 id="daily-plan-title">Today’s plan</h3>
-              <p>Ordered by retrieval value, not convenience.</p>
-            </div>
-            <span className="plan-progress-label">{completed.length}/{todayPlan.items.length} complete</span>
-          </div>
-          <ProgressBar value={progress} label="Today's plan completion" />
-
-          <div className="plan-list">
-            {todayPlan.items.map((item, index) => {
-              const Icon = itemIcon[item.kind];
-              const done = completed.includes(item.id);
-              const href = hrefFor(item.kind);
-              return (
-                <article key={item.id} className={cn("plan-item", done && "plan-item--done")}>
-                  <button
-                    type="button"
-                    className="plan-check"
-                    onClick={() => toggleItem(item.id)}
-                    aria-label={`${done ? "Mark incomplete" : "Mark complete"}: ${item.title}`}
-                  >
-                    {done ? <Check size={16} /> : <span>{index + 1}</span>}
-                  </button>
-                  <span className="plan-icon"><Icon size={18} /></span>
-                  <div className="plan-item__body">
-                    <div>
-                      <h4>{item.title}</h4>
-                      <span>{item.minutes} min · {item.topic}</span>
-                    </div>
-                    <p>{item.why}</p>
-                  </div>
-                  <Link href={href} className="icon-button icon-button--quiet" aria-label={`Open ${item.title}`} title={`Open ${item.title}`}>
-                    <ArrowRight size={18} />
-                  </Link>
-                </article>
-              );
-            })}
-          </div>
-
-          <button
-            type="button"
-            className={cn("button button--primary session-button", sessionRunning && "button--active")}
-            onClick={() => setSessionRunning((running) => !running)}
-          >
-            {sessionRunning ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-            {sessionRunning ? "Pause session" : `Start ${todayPlan.scheduledMinutes}-minute plan`}
-            {sessionRunning && <span className="session-button__time">{String(Math.floor(sessionSeconds / 60)).padStart(2, "0")}:{String(sessionSeconds % 60).padStart(2, "0")}</span>}
-          </button>
-          <p className="intention-line">{state.commitment.implementationIntention}</p>
-        </section>
-      </div>
-
-      <aside className="today-rail" aria-label="Sprint context">
-        <section className="rail-section readiness-rail">
-          <div className="section-heading-row">
-            <h3>Readiness</h3>
-            <Link href="/progress">Evidence <ArrowRight size={14} /></Link>
-          </div>
-          {readiness.map((item) => (
-            <div className="readiness-row" key={item.company}>
-              <div>
-                <span>{item.company}</span>
-                <strong>{item.score}</strong>
-              </div>
-              <ProgressBar
-                value={item.score}
-                label={`${item.company} readiness ${item.score}%`}
-                tone={item.score >= 80 ? "success" : item.score >= 60 ? "primary" : "warning"}
-              />
-              <small>{item.label} · observed attempts only</small>
-            </div>
-          ))}
-        </section>
-
-        <section className="rail-section gate-callout">
-          <div className="gate-callout__icon"><Trophy size={19} /></div>
-          <div>
-            <span>Friday gate</span>
-            <h3>Mixed set under clock</h3>
-            <p>Pass line 75% · 42 minutes · no guided help</p>
-          </div>
-          <strong>{daysToGate === 0 ? "Today" : `${daysToGate}d`}</strong>
-        </section>
-
-        <section className="rail-section">
-          <div className="section-heading-row">
-            <h3>Your circle</h3>
-            <Link href="/league">League <ArrowRight size={14} /></Link>
-          </div>
-          <div className="activity-list">
-            {activity.slice(0, 3).map((item) => (
-              <div className="activity-item" key={item.id}>
-                <Avatar initials={item.initials} size="sm" />
-                <p><strong>{item.name}</strong> {item.action}<span>{item.detail}</span></p>
-                <time>{relativeTime(item.createdAt)}</time>
-              </div>
-            ))}
-            {!activity.length && <p>Cohort activity will appear after the first timed attempts.</p>}
-          </div>
-        </section>
-
-        <section className="daily-floor">
-          <span><Flame size={17} /> {state.streak.days} day identity streak</span>
-          <p>You’re someone who trains daily. {state.streak.freezes} freezes are still available this month.</p>
-        </section>
-      </aside>
+        <ol className="activity-list">
+          {plan.items.map((item, index) => {
+            const done = completed.has(item.id);
+            const Icon = activityIcons[item.label] ?? Code2;
+            const evidenceControlled = /-(aptitude|concept|problems|lab|explain|interview)$/.test(item.id);
+            return (
+              <li key={item.id} className={cn(done && "is-complete")}>
+                {evidenceControlled
+                  ? <span className="activity-check" title={done ? "Completed from saved evidence" : "Complete this inside the activity"}>{done ? <Check size={16} /> : index + 1}</span>
+                  : <button type="button" className="activity-check" onClick={() => dispatch({ type: "plan.toggle", payload: { itemId: item.id, completedAt: new Date().toISOString() } })} aria-label={`${done ? "Mark incomplete" : "Mark complete"}: ${item.title}`}>{done ? <Check size={16} /> : index + 1}</button>}
+                <span className="activity-icon"><Icon size={18} /></span>
+                <div className="activity-copy"><span>{item.label} · {item.minutes} min</span><h3>{item.title}</h3><p>{item.proof}</p></div>
+                <Link href={item.href} className="icon-button" aria-label={`Open ${item.title}`} title={`Open ${item.title}`}><ArrowRight size={18} /></Link>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { getJudge } from "@/lib/judge";
 import { buildProblemHarness, buildScalingHarness, parseScalingOutput } from "@/lib/judge/harness";
 import { inferComplexity } from "@/lib/judge/complexity";
 import { publicJudgeError } from "@/lib/judge/errors";
-import { buildLessonHarness, isLessonId } from "@/lib/judge/lesson-harness";
+import { buildLessonHarness, isLessonSlug } from "@/lib/judge/lesson-harness";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,7 @@ const requestSchema = z.object({
   stdin: z.string().max(64_000).optional(),
   timeoutMs: z.number().int().min(250).max(15_000).optional(),
   problem: z.enum(["two-sum", "two-sum-stream", "longest-consecutive", "first-unique", "balanced-brackets", "eligible-orders", "pagination-cursor", "retry-budget", "daily-report", "membership-cache", "min-window"]).optional(),
-  lessonId: z.string().refine(isLessonId, "Unknown lesson").optional(),
+  lessonId: z.string().refine(isLessonSlug, "Unknown lesson").optional(),
   measureComplexity: z.boolean().optional(),
 });
 

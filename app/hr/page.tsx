@@ -1,5 +1,2 @@
-import type { Metadata } from "next";
-import { HrWorkspace } from "@/components/hr-workspace";
-
-export const metadata: Metadata = { title: "HR and communication" };
-export default function HrPage() { return <HrWorkspace />; }
+import { redirect } from "next/navigation";
+export default function HrPage() { redirect("/curriculum"); }

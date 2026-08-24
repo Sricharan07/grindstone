@@ -1,5 +1,2 @@
-import type { Metadata } from "next";
-import { DesignWorkspace } from "@/components/design-workspace";
-
-export const metadata: Metadata = { title: "Design rounds" };
-export default function DesignPage() { return <DesignWorkspace />; }
+import { redirect } from "next/navigation";
+export default function DesignPage() { redirect("/curriculum"); }

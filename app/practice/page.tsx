@@ -1,8 +1,2 @@
-import type { Metadata } from "next";
-import { PracticeWorkspace } from "@/components/practice-workspace";
-
-export const metadata: Metadata = { title: "Practice" };
-
-export default function PracticePage() {
-  return <PracticeWorkspace />;
-}
+import { redirect } from "next/navigation";
+export default function PracticePage() { redirect("/problems"); }
