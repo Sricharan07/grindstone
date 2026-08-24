@@ -56,3 +56,4 @@ next-env.d.ts
 /.pnpm-workspace.dataless.yaml
 /.impeccable/live/config.json
 /test-results/
+/.grindstone-credentials.txt

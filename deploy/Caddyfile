@@ -1,0 +1,18 @@
+:80 {
+  @untrusted not header X-Grindstone-Origin-Key {$ORIGIN_KEY}
+  respond @untrusted 403
+  encode zstd gzip
+  request_body {
+    max_size 2MB
+  }
+  reverse_proxy web:3000 {
+    header_up X-Forwarded-Host {$PUBLIC_HOST}
+    header_up X-Forwarded-Proto https
+  }
+  header {
+    -Server
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    X-Frame-Options DENY
+  }
+}

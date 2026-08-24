@@ -27,7 +27,7 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-CMD ["sh", "-ec", "test -n \"$AUTH_SECRET\" && test -n \"$AUTH_URL\" && test -n \"$AUTH_GOOGLE_ID\" && test -n \"$AUTH_GOOGLE_SECRET\" && test -n \"$ALLOWED_EMAILS\" && test -n \"$ADMIN_EMAILS\" && test -f \"$GRINDSTONE_CODEX_HOME/auth.json\" || { echo 'Hosted Grindstone requires auth, allowlists, and an owner ChatGPT login in GRINDSTONE_CODEX_HOME' >&2; exit 1; }; exec node server.js"]
+CMD ["sh", "-ec", "test -n \"$AUTH_SECRET\" && test -n \"$AUTH_URL\" && { test -n \"$AUTH_INVITES\" || { test -n \"$AUTH_GOOGLE_ID\" && test -n \"$AUTH_GOOGLE_SECRET\" && test -n \"$ALLOWED_EMAILS\"; }; } && test -n \"$ADMIN_EMAILS\" && test -f \"$GRINDSTONE_CODEX_HOME/auth.json\" || { echo 'Hosted Grindstone requires private auth, an admin, and an owner ChatGPT login in GRINDSTONE_CODEX_HOME' >&2; exit 1; }; exec node server.js"]
 
 FROM base AS worker
 COPY --from=deps /app/node_modules ./node_modules
