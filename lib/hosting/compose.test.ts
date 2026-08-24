@@ -4,6 +4,7 @@ import { parse } from "yaml";
 
 type ComposeService = {
   build?: { target?: string };
+  environment?: Record<string, string>;
   ports?: string[];
 };
 
@@ -22,5 +23,15 @@ describe("production container topology", () => {
     const services = compose("compose.aws.yml").services;
     expect(services.caddy.ports).toEqual(["80:80"]);
     expect(services.web).toBeUndefined();
+  });
+
+  it("keeps Piston limits aligned with the public judge contract", () => {
+    const judge = compose("docker-compose.yml").services.judge;
+    expect(judge.environment).toMatchObject({
+      PISTON_DISABLE_NETWORKING: "true",
+      PISTON_MAX_CONCURRENT_JOBS: "4",
+      PISTON_RUN_TIMEOUT: "15000",
+      PISTON_RUN_MEMORY_LIMIT: "268435456",
+    });
   });
 });

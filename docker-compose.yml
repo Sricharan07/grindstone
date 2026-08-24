@@ -70,6 +70,16 @@ services:
     image: ghcr.io/engineer-man/piston
     restart: unless-stopped
     privileged: true
+    environment:
+      PISTON_DISABLE_NETWORKING: "true"
+      PISTON_MAX_CONCURRENT_JOBS: "4"
+      PISTON_COMPILE_TIMEOUT: "15000"
+      PISTON_RUN_TIMEOUT: "15000"
+      PISTON_COMPILE_CPU_TIME: "15000"
+      PISTON_RUN_CPU_TIME: "15000"
+      PISTON_COMPILE_MEMORY_LIMIT: "536870912"
+      PISTON_RUN_MEMORY_LIMIT: "268435456"
+      PISTON_OUTPUT_MAX_SIZE: "65536"
     tmpfs:
       - /tmp:exec,mode=777
     ports:

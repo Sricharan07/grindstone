@@ -37,4 +37,14 @@ describe("Piston adapter", () => {
     expect(JSON.parse(String(request.body)).files[0].name).toBe("Main.java");
     expect(result.outcome).toBe("timeout");
   });
+
+  it("preserves Piston's bounded validation detail in infrastructure errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ message: "run_timeout cannot exceed the configured limit" }),
+      { status: 400 },
+    )));
+
+    await expect(new PistonAdapter("http://judge").run({ language: "python", code: "print(1)" }))
+      .rejects.toThrow("400: run_timeout cannot exceed the configured limit");
+  });
 });

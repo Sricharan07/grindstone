@@ -105,7 +105,14 @@ export class PistonAdapter implements JudgeAdapter {
     });
 
     if (!response.ok) {
-      throw new Error(`Piston execution returned ${response.status}`);
+      const detail = await response.text();
+      let message = detail;
+      try {
+        message = (JSON.parse(detail) as { message?: string }).message ?? detail;
+      } catch {
+        // Keep the plain-text response.
+      }
+      throw new Error(`Piston execution returned ${response.status}${message ? `: ${message.slice(0, 300)}` : ""}`);
     }
 
     const payload = (await response.json()) as PistonExecuteResponse;
