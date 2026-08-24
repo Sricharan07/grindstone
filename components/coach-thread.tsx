@@ -1,0 +1,10 @@
+"use client";
+
+import { useState } from "react";
+import { BrainCircuit, Send, X } from "@/components/icons";
+
+export function CoachThread({ title, context, onClose }: { title: string; context: string; onClose: () => void }) {
+  const [prompt, setPrompt] = useState(""); const [messages, setMessages] = useState<Array<{ role: "learner" | "coach"; text: string }>>([]); const [sending, setSending] = useState(false);
+  async function send() { const value = prompt.trim(); if (!value) return; setMessages((current) => [...current, { role: "learner", text: value }]); setPrompt(""); setSending(true); try { const response = await fetch("/api/coach", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ purpose: "why", prompt: value, context }) }); const payload = await response.json() as { answer?: string; error?: string }; setMessages((current) => [...current, { role: "coach", text: payload.answer ?? payload.error ?? "Coach unavailable" }]); } catch { setMessages((current) => [...current, { role: "coach", text: "Coach unavailable. The request was not sent." }]); } finally { setSending(false); } }
+  return <aside className="coach-thread" aria-label="AI coach thread"><header><span><BrainCircuit size={18} /> {title}</span><button type="button" className="icon-button" aria-label="Close coach" onClick={onClose}><X size={17}/></button></header><div className="coach-messages">{messages.length === 0 && <p>Ask for a counterexample, a deeper mechanism, or a test of your explanation.</p>}{messages.map((message, index) => <div key={index} className={`coach-message coach-message--${message.role}`}><strong>{message.role === "coach" ? "Coach" : "You"}</strong><p>{message.text}</p></div>)}</div><form onSubmit={(event) => { event.preventDefault(); void send(); }}><input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Why does assignment copy the reference?"/><button type="submit" className="icon-button" aria-label="Send question" disabled={sending || !prompt.trim()}><Send size={17}/></button></form></aside>;
+}

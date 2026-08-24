@@ -1,0 +1,1 @@
+ALTER TABLE "attempts" ALTER COLUMN "item_id" SET DATA TYPE text;

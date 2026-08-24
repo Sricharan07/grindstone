@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Grindstone
 
-## Getting Started
+Grindstone is a self-hosted four-week interview sprint engine for a private cohort. It turns a diagnostic and interview target into a daily deliberate-practice plan with weekly gates, PRIMM lessons, a sandboxed coding gym, timed simulations, mastery scheduling, calibration, and group accountability.
 
-First, run the development server:
+## Run locally
+
+Requires Node 22, pnpm through Corepack, and Docker Desktop. Create `.env` and set `POSTGRES_PASSWORD` plus a matching local `DATABASE_URL`, for example `postgres://grindstone:<url-encoded-password>@localhost:5433/grindstone`.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+corepack enable
+pnpm install
+cp .env.example .env
+docker compose up -d db redis sqlsandbox
+pnpm db:migrate
+pnpm db:seed
+pnpm judge:smoke
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). A new account begins with zero XP, zero readiness, no cohort activity, and a draft sprint. Run onboarding and the diagnostic to create the first plan. The seed installs 1,200 audited launch questions, the verified PRIMM lesson, five planted-bug repositories, company policy records, and the judge-backed Two Sum problem. Judge, SQL, question, and rubric failures are shown as failures; the app never invents a passing result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Verify
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm content:audit
+pnpm test:e2e
+pnpm judge:smoke
+```
 
-## Learn More
+`judge:smoke` requires Docker. Local development uses the ARM-friendly `docker-run` adapter; the hosted Compose profile explicitly uses Piston and must also pass this test on the real Windows host before untrusted code execution is enabled for the cohort.
 
-To learn more about Next.js, take a look at the following resources:
+The hosted readiness probe is `GET /api/health`. It returns HTTP 200 only when Postgres, Redis, the judge, and the isolated SQL sandbox are all reachable.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Product routes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `/` — Today, burndown, standup, daily plan, readiness, and friend activity
+- `/learn` — full PRIMM lesson with prediction and execution visualization
+- `/diagnostic` — route-setting day-one diagnostic and mastery priors
+- `/practice` — calibrated MCQ, recognition drills, debugging, and SQL
+- `/solve` — CodeMirror coding room with judge feedback and follow-ups
+- `/mock` — a timed product-company coding screen with rubric debrief
+- `/drive` — TCS NQT, Infosys, Wipro, Accenture, and big-tech simulations
+- `/curriculum` — route-aware fundamentals, DSA tiers, and recognition patterns
+- `/lab` — read-only SQL, planted codebase bugs, and AI-fluency rounds
+- `/design` — staged system-design canvas and LLD rehearsal
+- `/hr` — STAR evidence, answer, resume, and group-discussion practice
+- `/sprint-review` — evening check-in, Friday gate, and Saturday retro
+- `/progress` — readiness, topic mastery, and calibration evidence
+- `/league` — weekly XP league and accountability feed
+- `/onboarding` — route selection, commitment contract, and diagnostic setup
 
-## Deploy on Vercel
+Import an editable LeetCode export with `pnpm content:import -- /absolute/path/to/leetcode-export.json`. Imported metadata stays `verified`, and therefore hidden from learners, until an executable harness exists; currently Two Sum is the published three-language gym problem. Queue a verified AI batch with `pnpm content:generate -- "Percentages" quantitative 20` after Postgres, Redis, the worker, judge, and Anthropic credentials are configured.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Architecture
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The App Router UI is under `app/` and `components/`. The adaptive engine lives in `lib/engine`, judge adapters in `lib/judge`, content verification in `lib/content`, the Drizzle schema in `db/schema.ts`, and overnight jobs in `worker/`.
+
+The hosted Docker profile forces authentication on, refuses to boot without Google OAuth, an email allowlist, Anthropic credentials, and a public URL, and runs Next.js, Postgres 17, an isolated Postgres SQL sandbox, Redis/BullMQ, Piston with an automatic three-language bootstrap, the worker, rotating backups, and Cloudflare Tunnel. See [Windows hosting](docs/WINDOWS_HOSTING.md) and [pedagogy](docs/PEDAGOGY.md).

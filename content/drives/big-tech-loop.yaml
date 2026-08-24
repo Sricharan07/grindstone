@@ -1,0 +1,8 @@
+slug: big-tech-loop
+company: Big-tech practice loop
+cutoff: 75
+sections:
+  - { kind: coding, difficulty: medium, count: 2, minutes: 45 }
+  - { kind: codebase, count: 1, minutes: 45 }
+  - { kind: system_design, count: 1, minutes: 45 }
+  - { kind: behavioral, count: 4, minutes: 45 }

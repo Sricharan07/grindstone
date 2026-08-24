@@ -1,0 +1,9 @@
+slug: wipro
+company: Wipro
+cutoff: 65
+sections:
+  - { kind: mcq, topic: aptitude, count: 20, minutes: 25 }
+  - { kind: mcq, topic: verbal, count: 15, minutes: 20 }
+  - { kind: mcq, topic: pseudocode, count: 15, minutes: 20 }
+  - { kind: coding, difficulty: easy, count: 2, minutes: 45 }
+  - { kind: hr_interview, count: 5, minutes: 15 }

@@ -1,0 +1,210 @@
+# Grindstone — one stack, identical on the Mac (dev) and the Windows PC (runtime).
+#
+#   docker compose up -d                    # db + redis + judge  (dev on the Mac)
+#   docker compose --profile host up -d     # + web + worker + tunnel (the Windows PC)
+#
+# Only `cloudflared` carries public traffic, and it dials OUT. The web, worker,
+# and judge may make outbound API/runtime-download requests. No router ports.
+
+name: grindstone
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-grindstone}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-grindstone}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-grindstone}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+
+  # SQL practice sandbox. Deliberately a SEPARATE server from `db`: a learner's
+  # query can never reach real user data, however wrong it is.
+  sqlsandbox:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sandbox
+      POSTGRES_PASSWORD: sandbox
+      POSTGRES_DB: sandbox
+    command:
+      - postgres
+      - -c
+      - statement_timeout=5000
+      - -c
+      - max_connections=40
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - ./db/sandbox-seed:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6381:6379"
+    volumes:
+      - redisdata:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Untrusted code execution. isolate needs cgroup management, hence privileged.
+  # If this misbehaves under WSL2, set JUDGE_ADAPTER=docker-run and the app falls
+  # back to one ephemeral container per submission. See docs/WINDOWS_HOSTING.md.
+  judge:
+    image: ghcr.io/engineer-man/piston
+    restart: unless-stopped
+    privileged: true
+    tmpfs:
+      - /tmp:exec,mode=777
+    ports:
+      - "127.0.0.1:2000:2000"
+    volumes:
+      - pistondata:/piston
+    networks: [internal, edge]
+
+  # The official Piston image intentionally ships without language runtimes.
+  # Install the three supported runtimes into the persistent volume before the
+  # web process is allowed to become healthy.
+  piston-init:
+    image: curlimages/curl:latest
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        until curl -fsS http://judge:2000/api/v2/runtimes >/tmp/runtimes.json; do sleep 2; done
+        install_runtime() {
+          package=$$1
+          runtime=$$2
+          if ! grep -q "\"language\":\"$$runtime\"" /tmp/runtimes.json; then
+            curl -fsS -X POST -H 'content-type: application/json' \
+              --data "{\"language\":\"$$package\",\"version\":\"*\"}" \
+              http://judge:2000/api/v2/packages
+            curl -fsS http://judge:2000/api/v2/runtimes >/tmp/runtimes.json
+          fi
+          grep -q "\"language\":\"$$runtime\"" /tmp/runtimes.json
+        }
+        install_runtime python python
+        install_runtime java java
+        install_runtime gcc 'c++'
+    depends_on:
+      judge: { condition: service_started }
+    networks: [internal]
+
+  web:
+    profiles: [host]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      JUDGE_ADAPTER: piston
+      AUTH_REQUIRED: "true"
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      AUTH_URL: ${AUTH_URL:-}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DATABASE_URL: postgres://${POSTGRES_USER:-grindstone}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-grindstone}
+      SQLSANDBOX_URL: postgres://sandbox_ro:sandbox@sqlsandbox:5432/sandbox
+      REDIS_URL: redis://redis:6379
+      PISTON_URL: http://judge:2000
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      piston-init: { condition: service_completed_successfully }
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [internal, edge]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  # Generates, verifies and publishes content overnight; runs nightly rollups.
+  worker:
+    profiles: [host]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      JUDGE_ADAPTER: piston
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DATABASE_URL: postgres://${POSTGRES_USER:-grindstone}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-grindstone}
+      REDIS_URL: redis://redis:6379
+      PISTON_URL: http://judge:2000
+    depends_on:
+      db: { condition: service_healthy }
+      piston-init: { condition: service_completed_successfully }
+    networks: [internal, edge]
+
+  cloudflared:
+    profiles: [host]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:-}
+    depends_on:
+      web: { condition: service_healthy }
+    networks: [edge]
+
+  backup:
+    profiles: [host]
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        mkdir -p /backups/daily /backups/weekly
+        while true; do
+          stamp=$$(date -u +%Y-%m-%dT%H-%M-%SZ)
+          daily=/backups/daily/grindstone-$$stamp.dump
+          pg_dump -h db -U ${POSTGRES_USER:-grindstone} -d ${POSTGRES_DB:-grindstone} -Fc -f $$daily
+          if [ "$$(date -u +%u)" = "7" ]; then cp $$daily /backups/weekly/; fi
+          ls -1t /backups/daily/grindstone-*.dump 2>/dev/null | tail -n +8 | xargs -r rm -f
+          ls -1t /backups/weekly/grindstone-*.dump 2>/dev/null | tail -n +5 | xargs -r rm -f
+          sleep 86400
+        done
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [internal]
+
+volumes:
+  pgdata:
+  redisdata:
+  pistondata:
+
+networks:
+  internal:
+    driver: bridge
+    # Docker Desktop does not publish loopback ports from an internal-only
+    # network. Host exposure is still limited by each 127.0.0.1 binding above.
+  edge:
+    driver: bridge
