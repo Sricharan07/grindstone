@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { LessonAssessmentResult } from "@/lib/assessment/types";
 
 export const routeEnum = pgEnum("route", [
   "foundations",
@@ -379,6 +380,30 @@ export const attempts = pgTable(
     ...timestamps,
   },
   (table) => [index("attempts_user_created_idx").on(table.userId, table.createdAt)],
+);
+
+export const assessmentSessions = pgTable(
+  "assessment_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lessonId: text("lesson_id").notNull(),
+    language: text("language").notNull(),
+    attemptNumber: integer("attempt_number").notNull(),
+    seed: text("seed").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    code: text("code"),
+    result: jsonb("result").$type<LessonAssessmentResult>(),
+    ...timestamps,
+  },
+  (table) => [
+    index("assessment_sessions_user_lesson_idx").on(table.userId, table.lessonId, table.createdAt),
+    index("assessment_sessions_expires_idx").on(table.expiresAt),
+  ],
 );
 
 export const predictions = pgTable("predictions", {

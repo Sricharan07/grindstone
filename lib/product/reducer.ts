@@ -180,7 +180,8 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
         predictedSuccess: action.payload.predictedSuccess,
       });
       const assistance = action.payload.assistance ?? (action.payload.scaffoldLevel > 0 ? "concept" : "none");
-      const independent = assistance === "none" && Boolean(action.payload.transfer) && action.payload.timed;
+      const serverVerified = action.payload.itemType !== "lesson-transfer" || action.payload.verified === true;
+      const independent = assistance === "none" && Boolean(action.payload.transfer) && action.payload.timed && serverVerified;
       const updated = independent ? measured : {
         ...measured,
         rating: Math.min(measured.rating, Math.max(previous.rating, 0.68)),

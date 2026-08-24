@@ -6,6 +6,8 @@ import { hydrateLearnerState } from "@/lib/product/hydrate-state";
 import { reduceLearnerState } from "@/lib/product/reducer";
 import { synchronizeTemporalState } from "@/lib/product/sprint-clock";
 import type { LearnerAction, LearnerState } from "@/lib/product/types";
+import type { LessonAssessmentResult } from "@/lib/assessment/types";
+import { learningLesson } from "@/lib/learning/catalog";
 
 declare global {
   var __grindstoneState: Map<string, LearnerState> | undefined;
@@ -150,6 +152,8 @@ export async function applyLearnerAction(actor: { id: string; email: string; nam
           itemId: evidence.itemId,
           outcome: evidence.correct ? "correct" : "incorrect",
           answer: evidence.answer,
+          language: evidence.language,
+          code: evidence.code,
           durationMs: evidence.durationMs,
           timed: evidence.timed,
           scaffoldLevel: evidence.scaffoldLevel,
@@ -188,4 +192,66 @@ export async function applyLearnerAction(actor: { id: string; email: string; nam
   }
 
   return { state, persistence: loaded.persistence };
+}
+
+export async function recordLessonAssessment(
+  actor: { id: string; email: string; name: string },
+  result: LessonAssessmentResult,
+  code: string,
+) {
+  if (!result.attemptId) throw new Error("Independent assessment is missing its server attempt id.");
+  const lesson = learningLesson(result.lessonId);
+  const firstIndependentSubmission = result.attemptNumber === 1;
+  const loaded = await loadLearnerState(actor);
+  const alreadyRecorded = loaded.state.attempts.some((attempt) => attempt.id === result.attemptId);
+  if (alreadyRecorded) {
+    if (result.passed && loaded.state.lessons[result.lessonId]?.stage !== "complete") {
+      return applyLearnerAction(actor, {
+        type: "lesson.save",
+        payload: {
+          lessonId: result.lessonId,
+          progress: { transferPassed: true, testsPassed: true, stage: "complete", transferCode: code },
+        },
+      });
+    }
+    return loaded;
+  }
+  let applied = await applyLearnerAction(actor, {
+    type: "attempt.record",
+    payload: {
+      id: result.attemptId,
+      itemType: "lesson-transfer",
+      itemId: result.lessonId,
+      topic: lesson.area,
+      correct: result.passed,
+      difficulty: 0.7,
+      durationMs: result.solveDurationMs ?? result.judgeDurationMs,
+      solveDurationMs: result.solveDurationMs,
+      targetDurationMs: lesson.minutes * 60_000,
+      scaffoldLevel: 0,
+      assistance: "none",
+      transfer: firstIndependentSubmission,
+      timed: true,
+      verified: true,
+      score: result.score,
+      passedTests: result.passedCount,
+      totalTests: result.totalCount,
+      attemptNumber: result.attemptNumber,
+      feedback: result.remarks,
+      language: result.language,
+      code,
+      answer: { assessmentId: result.attemptId, score: result.score, passed: result.passed },
+      createdAt: new Date().toISOString(),
+    },
+  });
+
+  if (!result.passed) return applied;
+  applied = await applyLearnerAction(actor, {
+    type: "lesson.save",
+    payload: {
+      lessonId: result.lessonId,
+      progress: { transferPassed: true, testsPassed: true, stage: "complete", transferCode: code },
+    },
+  });
+  return applied;
 }

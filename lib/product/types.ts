@@ -58,6 +58,15 @@ export interface AttemptEvidence {
   timed: boolean;
   communicationScore?: number;
   measuredComplexity?: string;
+  verified?: boolean;
+  score?: number;
+  passedTests?: number;
+  totalTests?: number;
+  attemptNumber?: number;
+  feedback?: string[];
+  solveDurationMs?: number;
+  language?: LearningLanguage;
+  code?: string;
   answer?: unknown;
   createdAt: string;
 }

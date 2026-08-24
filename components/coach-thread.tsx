@@ -1,14 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrainCircuit, RotateCcw, Send, X } from "@/components/icons";
 
-export function CoachThread({ title, context, lessonId, onClose }: { title: string; context: string; lessonId?: string; onClose?: () => void }) {
+export function CoachThread({ title, context, lessonId, suggestedPrompt, onClose }: { title: string; context: string; lessonId?: string; suggestedPrompt?: string; onClose?: () => void }) {
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<Array<{ role: "learner" | "coach"; text: string; failed?: boolean }>>([]);
   const [sending, setSending] = useState(false);
   const [lastPrompt, setLastPrompt] = useState("");
   const controllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (suggestedPrompt) setPrompt(suggestedPrompt);
+  }, [suggestedPrompt]);
 
   async function send(retryValue?: string) {
     const value = (retryValue ?? prompt).trim();

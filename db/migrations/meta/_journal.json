@@ -29,6 +29,13 @@
       "when": 1787489940642,
       "tag": "0003_ancient_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787613629388,
+      "tag": "0004_red_triathlon",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@ import { hydrateLearnerState } from "@/lib/product/hydrate-state";
 interface LearnerStateValue {
   state: LearnerState;
   dispatch: (action: LearnerAction) => void;
+  refresh: () => Promise<void>;
   ready: boolean;
   persistence: "postgres" | "memory" | "browser";
 }
@@ -23,6 +24,14 @@ export function LearnerStateProvider({ children }: { children: React.ReactNode }
   const [ready, setReady] = useState(false);
   const [persistence, setPersistence] = useState<LearnerStateValue["persistence"]>("browser");
   const syncQueue = useRef<Promise<void>>(Promise.resolve());
+
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const response = await fetch("/api/state", { signal });
+    if (!response.ok) return;
+    const result = await response.json() as { state: LearnerState; persistence: "postgres" | "memory" };
+    setState((current) => result.state.revision >= current.revision ? synchronizeTemporalState(hydrateLearnerState(result.state)) : current);
+    setPersistence(result.persistence);
+  }, []);
 
   useEffect(() => {
     const local = window.localStorage.getItem(storageKey) ?? legacyStorageKeys.map((key) => window.localStorage.getItem(key)).find(Boolean);
@@ -63,7 +72,7 @@ export function LearnerStateProvider({ children }: { children: React.ReactNode }
       .catch(() => setPersistence("browser"));
   }, []);
 
-  const value = useMemo(() => ({ state, dispatch, ready, persistence }), [state, dispatch, ready, persistence]);
+  const value = useMemo(() => ({ state, dispatch, refresh, ready, persistence }), [state, dispatch, refresh, ready, persistence]);
   return <LearnerStateContext.Provider value={value}>{children}</LearnerStateContext.Provider>;
 }
 

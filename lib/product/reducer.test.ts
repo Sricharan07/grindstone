@@ -40,6 +40,15 @@ describe("learner state reducer", () => {
     expect(independent.readiness["Coding and debugging"]).toBeGreaterThan(0);
   });
 
+  it("requires server verification before lesson transfer can change readiness", () => {
+    const initial = createDefaultLearnerState();
+    const lessonAttempt = { ...independentAttempt, itemType: "lesson-transfer", itemId: "array-scan" };
+    const unverified = reduceLearnerState(initial, { type: "attempt.record", payload: lessonAttempt });
+    const verified = reduceLearnerState(initial, { type: "attempt.record", payload: { ...lessonAttempt, verified: true } });
+    expect(unverified.readiness["Coding and debugging"]).toBe(0);
+    expect(verified.readiness["Coding and debugging"]).toBeGreaterThan(0);
+  });
+
   it("records gate repair topics, protects a streak once per date, and restarts cleanly", () => {
     const gated = reduceLearnerState(createDefaultLearnerState(), { type: "gate.complete", payload: { week: 1, score: 50, failedTopics: ["SQL", "Graphs"], completedAt: "2026-08-30T00:00:00Z" } });
     const first = reduceLearnerState(gated, { type: "attempt.record", payload: independentAttempt });

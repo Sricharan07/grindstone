@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, BookOpen, BrainCircuit, Check, CircleHelp, Clock3, Code2, EyeOff, Lightbulb, Play, RotateCcw, Sparkles, Target, X } from "@/components/icons";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, BookOpen, BrainCircuit, Check, CircleHelp, Clock3, Code2, EyeOff, Lightbulb, Play, RotateCcw, Sparkles, Target, Timer, X } from "@/components/icons";
 import { CodeEditor } from "@/components/code-editor";
 import { CoachThread } from "@/components/coach-thread";
 import { ConceptVisualizer } from "@/components/concept-visualizer";
+import { AssessmentResults } from "@/components/assessment-results";
 import { SPRINT_DAYS } from "@/lib/curriculum/catalog";
 import { LEARNING_LESSONS, learningLesson, starterFor, type LessonSlug } from "@/lib/learning/catalog";
+import type { IndependentAttemptStart, LessonAssessmentResult, StartAssessmentResponse } from "@/lib/assessment/types";
 import type { AssistanceLevel, LessonStage } from "@/lib/product/types";
 import { cn } from "@/lib/utils";
 import { useLearnerState } from "./state/learner-state-provider";
@@ -23,9 +25,9 @@ const assistancePrompt: Record<AssistanceLevel, string> = {
   "next-step": "Tell me only the next concrete step in my current solution.", completion: "Suggest exactly one line that could come next.",
 };
 
-function runnerMessage(payload: { result?: { outcome: string; stdout: string; stderr: string }; error?: string }) {
-  if (!payload.result) return payload.error ?? "The code runner did not respond.";
-  return payload.result.outcome === "ok" ? payload.result.stdout.trim() : payload.result.stderr.trim() || `Run ended with ${payload.result.outcome.replaceAll("_", " ")}.`;
+function formatTimer(durationMs: number) {
+  const seconds = Math.max(0, Math.floor(durationMs / 1000));
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function LessonImage({ slug, week, panel, alt }: { slug: string; week: number; panel: number; alt: string }) {
@@ -42,7 +44,7 @@ function VideoLesson({ youtubeId, title, creator, duration, reason }: { youtubeI
 
 export function LearnWorkspace({ lessonSlug, initialStep }: { lessonSlug: LessonSlug; initialStep?: string }) {
   const lesson = learningLesson(lessonSlug);
-  const { state, dispatch } = useLearnerState();
+  const { state, dispatch, refresh } = useLearnerState();
   const saved = state.lessons[lesson.slug];
   const requestedStage = stages.find((item) => item.id === initialStep)?.id;
   const savedStageIndex = saved?.stage === "complete" ? stages.length : stages.findIndex((item) => item.id === saved?.stage);
@@ -55,12 +57,18 @@ export function LearnWorkspace({ lessonSlug, initialStep }: { lessonSlug: Lesson
   const [explanation, setExplanation] = useState(saved?.explanation ?? "");
   const [conceptVisible, setConceptVisible] = useState(stage !== "code");
   const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [assessmentResult, setAssessmentResult] = useState<LessonAssessmentResult | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [independentAttempt, setIndependentAttempt] = useState<IndependentAttemptStart | null>(null);
+  const [attemptLoading, setAttemptLoading] = useState(false);
+  const [clockNow, setClockNow] = useState(0);
+  const [coachPrompt, setCoachPrompt] = useState<string>();
   const [hint, setHint] = useState<string | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [ghostText, setGhostText] = useState<string>();
   const [grade, setGrade] = useState<{ score: number; feedback: string[] }>();
   const abortRef = useRef<AbortController | null>(null);
+  const restoredLessonRef = useRef(Boolean(saved));
   const stageIndex = stage === "complete" ? stages.length : Math.max(0, stages.findIndex((item) => item.id === stage));
   const hintsUsed = saved?.hintsUsed ?? [];
   const nextAssistance = assistanceOrder[Math.min(hintsUsed.length, assistanceOrder.length - 1)] ?? "next-step";
@@ -69,15 +77,73 @@ export function LearnWorkspace({ lessonSlug, initialStep }: { lessonSlug: Lesson
     `Lesson: ${lesson.title}`, `Outcome: ${lesson.outcome}`, `Why: ${lesson.why}`, `Definition: ${lesson.definition}`,
     `Input contract: ${lesson.inputFormat}`, `Language: ${state.profile.language}`, `Current stage: ${stage}`,
     `Learner prediction: ${prediction || "not recorded"}`, `Learner code:\n${stage === "transfer" ? transferCode : code}`,
-  ].join("\n"), [code, lesson, prediction, stage, state.profile.language, transferCode]);
+    assessmentResult ? `Latest checks: ${assessmentResult.passedCount}/${assessmentResult.totalCount} passed.\n${assessmentResult.cases.filter((item) => item.status !== "passed").map((item) => `${item.name}: expected ${item.expected}, received ${item.actual}. ${item.error ?? ""}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n"), [assessmentResult, code, lesson, prediction, stage, state.profile.language, transferCode]);
+
+  useEffect(() => {
+    if (restoredLessonRef.current || !saved) return;
+    restoredLessonRef.current = true;
+    const timer = window.setTimeout(() => {
+      setStage(saved.stage);
+      setCode(saved.code || starterFor(saved.language, lesson.slug));
+      setTransferCode(saved.transferCode || starterFor(saved.language, lesson.slug));
+      setPrediction(saved.prediction);
+      setExplanation(saved.explanation);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [lesson.slug, saved]);
+
+  const startIndependent = useCallback(async (forceNew = false) => {
+    setAttemptLoading(true);
+    setRunError(null);
+    if (forceNew) {
+      setAssessmentResult(null);
+      setIndependentAttempt(null);
+      setTransferCode(starterFor(state.profile.language, lesson.slug));
+    }
+    try {
+      const response = await fetch("/api/lesson-assessments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "start", lessonId: lesson.slug, language: state.profile.language, forceNew }),
+      });
+      const payload = await response.json() as StartAssessmentResponse & { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Could not start the independent check.");
+      if (payload.result) {
+        setAssessmentResult(payload.result);
+        setIndependentAttempt(null);
+      } else {
+        setIndependentAttempt(payload.attempt);
+        setAssessmentResult(null);
+        setClockNow(Date.now());
+      }
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "Could not start the independent check.");
+    } finally {
+      setAttemptLoading(false);
+    }
+  }, [lesson.slug, state.profile.language]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => dispatch({ type: "lesson.save", payload: { lessonId: lesson.slug, progress: { stage, language: state.profile.language, code, transferCode, prediction, explanation } } }), 600);
     return () => window.clearTimeout(timer);
   }, [code, dispatch, explanation, lesson.slug, prediction, stage, state.profile.language, transferCode]);
 
+  useEffect(() => {
+    if (stage !== "transfer") return;
+    const timer = window.setTimeout(() => void startIndependent(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [stage, startIndependent]);
+
+  useEffect(() => {
+    if (!independentAttempt || assessmentResult) return;
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [assessmentResult, independentAttempt]);
+
   function move(next: LessonStage) {
-    setStage(next); setResult(null); setHint(null); setGhostText(undefined);
+    setStage(next); setAssessmentResult(null); setRunError(null); setHint(null); setGhostText(undefined); setCoachPrompt(undefined);
+    if (next === "transfer") setIndependentAttempt(null);
     if (next === "code") setConceptVisible(false);
     dispatch({ type: "lesson.save", payload: { lessonId: lesson.slug, progress: { stage: next, language: state.profile.language, code, transferCode, prediction, explanation } } });
     const completedItem = next === "code" ? `d${curriculumDay?.day}-concept` : next === "transfer" ? `d${curriculumDay?.day}-explain` : undefined;
@@ -102,28 +168,40 @@ export function LearnWorkspace({ lessonSlug, initialStep }: { lessonSlug: Lesson
     } finally { abortRef.current = null; setHintLoading(false); }
   }
 
-  async function runTests(transfer: boolean) {
-    setRunning(true); setResult(null);
-    const source = transfer ? transferCode : code;
-    const startedAt = Date.now();
+  async function runGuidedTests() {
+    setRunning(true); setAssessmentResult(null); setRunError(null);
     try {
-      const response = await fetch("/api/judge", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language: state.profile.language, code: source, lessonId: lesson.slug }) });
-      const payload = await response.json() as { result?: { outcome: string; stdout: string; stderr: string }; error?: string };
-      const ok = response.ok && payload.result?.outcome === "ok";
-      setResult({ ok, message: runnerMessage(payload) });
-      dispatch({ type: "lesson.save", payload: { lessonId: lesson.slug, progress: transfer ? { transferPassed: ok, testsPassed: ok, stage: ok ? "complete" : "transfer" } : { testsPassed: ok } } });
-      dispatch({ type: "attempt.record", payload: { id: crypto.randomUUID(), itemType: transfer ? "lesson-transfer" : "lesson-code", itemId: lesson.slug, topic: lesson.area, correct: ok, difficulty: transfer ? 0.7 : 0.5, durationMs: Date.now() - startedAt, targetDurationMs: lesson.minutes * 60_000, scaffoldLevel: transfer ? 0 : hintsUsed.length, assistance: transfer ? "none" : hintsUsed.at(-1) ?? "none", transfer, timed: transfer, answer: source, createdAt: new Date().toISOString() } });
-      if (ok && transfer) {
-        setStage("complete");
-        if (curriculumDay) {
-          for (const suffix of ["concept", "explain"] as const) {
-            const itemId = `d${curriculumDay.day}-${suffix}`;
-            if (!state.sprint.completedItems.includes(itemId)) dispatch({ type: "plan.toggle", payload: { itemId, completedAt: new Date().toISOString() } });
-          }
-        }
-      }
-    } catch (error) { setResult({ ok: false, message: error instanceof Error ? error.message : "The code runner is unavailable." }); }
-    finally { setRunning(false); }
+      const response = await fetch("/api/lesson-assessments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "guided", language: state.profile.language, code, lessonId: lesson.slug }),
+      });
+      const payload = await response.json() as { result?: LessonAssessmentResult; error?: string };
+      if (!response.ok || !payload.result) throw new Error(payload.error ?? "The code runner did not return a result.");
+      setAssessmentResult(payload.result);
+      dispatch({ type: "lesson.save", payload: { lessonId: lesson.slug, progress: { testsPassed: payload.result.passed } } });
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "The code runner is unavailable.");
+    } finally { setRunning(false); }
+  }
+
+  async function submitIndependent() {
+    if (!independentAttempt) return;
+    setRunning(true); setRunError(null);
+    try {
+      const response = await fetch("/api/lesson-assessments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "submit", attemptId: independentAttempt.id, code: transferCode }),
+      });
+      const payload = await response.json() as { result?: LessonAssessmentResult; error?: string };
+      if (!response.ok || !payload.result) throw new Error(payload.error ?? "The assessment did not return a result.");
+      setAssessmentResult(payload.result);
+      setIndependentAttempt(null);
+      await refresh();
+    } catch (error) {
+      setRunError(error instanceof Error ? error.message : "The assessment service is unavailable.");
+    } finally { setRunning(false); }
   }
 
   async function gradeExplanation() {
@@ -137,6 +215,20 @@ export function LearnWorkspace({ lessonSlug, initialStep }: { lessonSlug: Lesson
 
   const currentIndex = LEARNING_LESSONS.findIndex((item) => item.slug === lesson.slug);
   const nextLesson = LEARNING_LESSONS[currentIndex + 1];
+  const attemptExpired = Boolean(independentAttempt && Date.parse(independentAttempt.expiresAt) <= clockNow);
+  const attemptElapsed = assessmentResult?.solveDurationMs !== undefined
+    ? formatTimer(assessmentResult.solveDurationMs)
+    : independentAttempt ? formatTimer(clockNow - Date.parse(independentAttempt.startedAt)) : "00:00";
+
+  function finishLesson() {
+    move("complete");
+    if (curriculumDay) {
+      for (const suffix of ["concept", "explain"] as const) {
+        const itemId = `d${curriculumDay.day}-${suffix}`;
+        if (!state.sprint.completedItems.includes(itemId)) dispatch({ type: "plan.toggle", payload: { itemId, completedAt: new Date().toISOString() } });
+      }
+    }
+  }
 
   return <main className="lesson-workspace">
     <header className="lesson-topbar"><Link href="/curriculum" className="button button--quiet"><ArrowLeft size={16} /> Curriculum</Link><div><span className="brand-mark" aria-hidden="true">G</span><strong>Lesson workspace</strong></div><span><Clock3 size={15} /> {lesson.minutes} min · {state.profile.language === "python" ? "Python" : "Java"}</span></header>
@@ -155,13 +247,16 @@ export function LearnWorkspace({ lessonSlug, initialStep }: { lessonSlug: Lesson
     {stage === "predict" && <section className="lesson-focus-stage"><div className="focus-stage__intro"><p className="section-label"><BrainCircuit size={16} /> Retrieval before code</p><h2>{lesson.prediction}</h2><p>Write what you believe will happen and why. A committed prediction makes the correction memorable.</p></div><label className="field"><span>Your prediction and reasoning</span><textarea autoFocus rows={7} value={prediction} onChange={(event) => setPrediction(event.target.value)} placeholder="I expect... because..." /><small>At least 20 characters. The answer does not need to be perfect.</small></label><div className="visible-cases"><strong>Visible examples</strong>{lesson.visibleCases.map((item) => <span key={item.input}><code>{item.input || "(empty)"}</code><ArrowRight size={14} /><code>{item.output}</code></span>)}</div><button type="button" className="button button--primary" disabled={prediction.trim().length < 20} onClick={() => move("code")}>Commit and open editor <Code2 size={17} /></button></section>}
 
     {stage === "code" && <section className="coding-workspace"><header className={cn("concept-recall", !conceptVisible && "is-hidden")}><div><EyeOff size={16} /><span><strong>Recall from memory</strong><p>{lesson.intuition}</p></span></div><button type="button" className="button button--quiet" onClick={() => setConceptVisible((value) => !value)}>{conceptVisible ? "Hide concept" : "Reveal concept"}</button></header><div className="coding-layout">
-      <div className="editor-pane"><header><span><Code2 size={16} /> {state.profile.language === "python" ? "Python" : "Java"}</span><small>Implement solve(raw)</small></header><CodeEditor value={code} language={state.profile.language} onChange={(value) => { setCode(value); setGhostText(undefined); }} ghostText={ghostText} /><footer><button type="button" className="button button--secondary" disabled={hintLoading} onClick={() => void requestTutor("completion", true)}><Sparkles size={16} /> Inline suggestion</button><button type="button" className="button button--primary" disabled={running} onClick={() => void runTests(false)}><Play size={16} /> {running ? "Running..." : "Run hidden tests"}</button></footer>{result && <div className={cn("run-result", result.ok ? "run-result--ok" : "run-result--error")} role="status">{result.ok ? <Check size={17} /> : <X size={17} />}<span>{result.message}</span></div>}</div>
-      <aside className="help-pane"><p className="section-label"><CircleHelp size={15} /> Help ladder</p><h2>Take only the help you need.</h2><p>Help is recorded so readiness reflects what you can reproduce alone.</p><button type="button" className="button button--secondary" disabled={hintLoading} onClick={() => void requestTutor(nextAssistance)}><Lightbulb size={16} /> {hintLoading ? "Luna is thinking..." : assistancePrompt[nextAssistance]}</button>{hint && <div className="hint-callout"><strong>Luna</strong><p>{hint}</p></div>}<CoachThread title="Ask Luna" context={context} lessonId={lesson.slug} /></aside>
-    </div><button type="button" className="button button--primary lesson-next" disabled={!result?.ok} onClick={() => move("explain")}>Explain my solution <ArrowRight size={17} /></button></section>}
+      <div className="editor-pane"><header><span><Code2 size={16} /> {state.profile.language === "python" ? "Python" : "Java"}</span><small>Implement solve(raw)</small></header><CodeEditor value={code} language={state.profile.language} onChange={(value) => { setCode(value); setGhostText(undefined); setAssessmentResult(null); }} ghostText={ghostText} /><footer><button type="button" className="button button--secondary" disabled={hintLoading} onClick={() => void requestTutor("completion", true)}><Sparkles size={16} /> Inline suggestion</button><button type="button" className="button button--primary" disabled={running} onClick={() => void runGuidedTests()}><Play size={16} /> {running ? "Running 4 checks..." : "Run 4 learning tests"}</button></footer>{runError && <div className="run-result run-result--error" role="alert"><X size={17} /><span>{runError}</span></div>}</div>
+      <aside className="help-pane"><p className="section-label"><CircleHelp size={15} /> Help ladder</p><h2>Take only the help you need.</h2><p>Help is recorded so readiness reflects what you can reproduce alone.</p><button type="button" className="button button--secondary" disabled={hintLoading} onClick={() => void requestTutor(nextAssistance)}><Lightbulb size={16} /> {hintLoading ? "Luna is thinking..." : assistancePrompt[nextAssistance]}</button>{hint && <div className="hint-callout"><strong>Luna</strong><p>{hint}</p></div>}<CoachThread title="Ask Luna" context={context} lessonId={lesson.slug} suggestedPrompt={coachPrompt} /></aside>
+    </div>{assessmentResult && <AssessmentResults result={assessmentResult} onAsk={setCoachPrompt} />}<button type="button" className="button button--primary lesson-next" disabled={!assessmentResult?.passed} onClick={() => move("explain")}>Explain my solution <ArrowRight size={17} /></button></section>}
 
     {stage === "explain" && <section className="lesson-focus-stage"><div className="focus-stage__intro"><p className="section-label"><Target size={16} /> Interview answer</p><h2>Explain the approach without narrating every line.</h2><p>State the structure, invariant, complexity, and one edge case as if the interviewer asked why this works.</p></div><label className="field"><span>Your explanation</span><textarea autoFocus rows={9} value={explanation} onChange={(event) => setExplanation(event.target.value)} placeholder="I use... The invariant is... This is O(...) because... One edge case is..." /></label>{grade && <div className="explanation-grade"><strong>{grade.score ? `${grade.score}/100` : "Saved"}</strong><span>{grade.feedback[0] ?? "Ready for the no-help solve."}</span></div>}<div className="stage-actions"><button type="button" className="button button--secondary" disabled={explanation.trim().length < 20} onClick={() => void gradeExplanation()}>Get feedback</button><button type="button" className="button button--primary" disabled={explanation.trim().length < 40} onClick={() => move("transfer")}>Solve a fresh case alone <ArrowRight size={17} /></button></div></section>}
 
-    {stage === "transfer" && <section className="coding-workspace transfer-workspace"><header className="transfer-header"><div><p className="section-label"><RotateCcw size={15} /> Independent transfer</p><h2>{lesson.transferPrompt}</h2><p>The concept and AI help are closed for this pass. This result can raise readiness.</p></div><span>No help · Timed evidence</span></header><div className="editor-pane"><header><span><Code2 size={16} /> Fresh {state.profile.language === "python" ? "Python" : "Java"} attempt</span><small>{lesson.inputFormat}</small></header><CodeEditor value={transferCode} language={state.profile.language} onChange={setTransferCode} /><footer><span /><button type="button" className="button button--primary" disabled={running} onClick={() => void runTests(true)}><Play size={16} /> {running ? "Running..." : "Submit independent solve"}</button></footer>{result && <div className={cn("run-result", result.ok ? "run-result--ok" : "run-result--error")} role="status">{result.ok ? <Check size={17} /> : <X size={17} />}<span>{result.message}</span></div>}</div></section>}
+    {stage === "transfer" && <section className="coding-workspace transfer-workspace"><header className="transfer-header"><div><p className="section-label"><RotateCcw size={15} /> Independent assessment</p><h2>{lesson.transferPrompt}</h2><p>Write this version without hints. Your first submitted score is the readiness evidence; retries stay practice.</p></div><div className="transfer-metrics"><span><Timer size={15} /><strong>{attemptLoading ? "--:--" : attemptElapsed}</strong> elapsed</span><span><Check size={15} /><strong>8</strong> unseen checks</span></div></header><div className="editor-pane"><header><span><Code2 size={16} /> {assessmentResult ? `Attempt ${assessmentResult.attemptNumber} submitted` : `Attempt ${independentAttempt?.attemptNumber ?? 1} · ${state.profile.language === "python" ? "Python" : "Java"}`}</span><small>{lesson.inputFormat}</small></header><CodeEditor value={transferCode} language={state.profile.language} onChange={setTransferCode} /><footer><span className="assessment-lock">{attemptExpired ? "Attempt expired" : assessmentResult ? "Submission locked" : "One scored submission for this test set"}</span><button type="button" className="button button--primary" disabled={running || attemptLoading || attemptExpired || !independentAttempt || Boolean(assessmentResult)} onClick={() => void submitIndependent()}><Play size={16} /> {running ? "Grading 8 checks..." : attemptLoading ? "Preparing checks..." : "Submit for grading"}</button></footer>{runError && <div className="run-result run-result--error" role="alert"><X size={17} /><span>{runError}</span></div>}</div>
+      {assessmentResult && <><AssessmentResults result={assessmentResult} onAsk={setCoachPrompt} /><section className="assessment-review"><header><BrainCircuit size={18} /><div><strong>Review with Luna</strong><p>Your submission is locked. You can now ask about a failed check without changing its score.</p></div></header><CoachThread title="Luna assessment review" context={context} lessonId={lesson.slug} suggestedPrompt={coachPrompt} /></section><div className="assessment-actions">{assessmentResult.passed ? <button type="button" className="button button--primary" onClick={finishLesson}>Finish lesson <ArrowRight size={17} /></button> : <button type="button" className="button button--primary" disabled={attemptLoading} onClick={() => void startIndependent(true)}><RotateCcw size={16} /> Retry with a new test set</button>}</div></>}
+      {attemptExpired && !assessmentResult && <div className="assessment-actions"><button type="button" className="button button--primary" disabled={attemptLoading} onClick={() => void startIndependent(true)}><RotateCcw size={16} /> Start a new test set</button></div>}
+    </section>}
 
     {stage === "complete" && <section className="lesson-complete"><span><Check size={24} /></span><p className="section-label">Independent evidence recorded</p><h1>{lesson.title} is complete.</h1><p>Your transfer result counts toward readiness. Grindstone will schedule a retrieval based on this attempt.</p><div><Link href="/" className="button button--primary">Return to Today <ArrowRight size={17} /></Link>{nextLesson && <Link href={`/learn/${nextLesson.slug}`} className="button button--secondary">Preview next concept</Link>}</div></section>}
   </main>;

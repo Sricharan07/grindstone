@@ -23,6 +23,62 @@ async function routeJudge(page: Page) {
   await page.route("**/api/judge", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ result: { outcome: "ok", stdout: "3/3 tests passed", stderr: "", exitCode: 0, signal: null, durationMs: 8 } }) }));
 }
 
+function assessmentResult(mode: "guided" | "independent", passed = true, attemptNumber = mode === "independent" ? 1 : 0) {
+  const total = mode === "guided" ? 4 : 8;
+  const cases = Array.from({ length: total }, (_, index) => ({
+    id: `case-${index}`,
+    name: index === total - 1 ? "All-negative input" : `Check ${index + 1}`,
+    category: index === total - 1 ? "Initialization" : "Core behavior",
+    group: index < 4 ? "correctness" : index < 7 ? "edgeCases" : "efficiency",
+    input: index === total - 1 ? "-8,-2,-5" : String(index),
+    expected: index === total - 1 ? "-2" : String(index),
+    actual: !passed && index === total - 1 ? "0" : index === total - 1 ? "-2" : String(index),
+    status: !passed && index === total - 1 ? "failed" : "passed",
+    ...(!passed && index === total - 1 ? { errorType: "wrong_answer", error: "Expected -2, but the solution returned 0.", correction: "Start best from the first value." } : { correction: "Keep the invariant." }),
+  }));
+  const passedCount = passed ? total : total - 1;
+  return {
+    mode,
+    ...(mode === "independent" ? { attemptId: `00000000-0000-4000-8000-00000000000${attemptNumber}` } : {}),
+    lessonId: "array-scan",
+    language: "python",
+    attemptNumber,
+    firstSubmission: attemptNumber === 1,
+    passed,
+    score: passed ? 100 : 90,
+    passedCount,
+    totalCount: total,
+    solveDurationMs: mode === "independent" ? 62_000 : undefined,
+    judgeDurationMs: 38,
+    outcome: passed ? "passed" : "failed",
+    summary: passed ? `${total} of ${total} checks passed.` : `${passedCount} of ${total} checks passed. Open the failed checks below to see exactly what to fix.`,
+    remarks: passed ? ["All checks passed."] : ["Review larger inputs: 0 of 1 passed."],
+    sections: {
+      correctness: { earned: 70, possible: 70, passed: Math.min(4, passedCount), total: 4 },
+      edgeCases: { earned: 20, possible: 20, passed: 3, total: 3 },
+      efficiency: { earned: passed ? 10 : 0, possible: 10, passed: passed ? 1 : 0, total: 1 },
+    },
+    cases,
+  };
+}
+
+async function routeLessonAssessments(page: Page, independentPasses = false) {
+  let attemptNumber = 1;
+  await page.route("**/api/lesson-assessments", async (route) => {
+    const body = route.request().postDataJSON() as { action: string; forceNew?: boolean };
+    if (body.action === "guided") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ result: assessmentResult("guided") }) });
+      return;
+    }
+    if (body.action === "start") {
+      if (body.forceNew) attemptNumber++;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ attempt: { id: `00000000-0000-4000-8000-00000000000${attemptNumber}`, lessonId: "array-scan", language: "python", attemptNumber, startedAt: new Date(Date.now() - 1000).toISOString(), expiresAt: new Date(Date.now() + 2_700_000).toISOString(), testCount: 8 } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ result: assessmentResult("independent", independentPasses, attemptNumber) }) });
+  });
+}
+
 test("resumable setup asks only for name, Python or Java, and a daily time", async ({ page }) => {
   await routeState(page, createDefaultLearnerState("Member"));
   await page.goto("/onboarding");
@@ -57,7 +113,7 @@ test("curriculum shows every one of the 28 ordered days", async ({ page }) => {
 
 test("concept lesson combines explanation, generated art, visualization, video, Luna, and editor", async ({ page }) => {
   await routeState(page, onboardedState());
-  await routeJudge(page);
+  await routeLessonAssessments(page);
   await page.goto("/learn/hashmap-two-sum");
   await expect(page.getByRole("heading", { name: "Trade memory for immediate lookup" })).toBeVisible();
   await expect(page.locator(".lesson-image")).toHaveAttribute("data-lesson", "hashmap-two-sum");
@@ -68,9 +124,43 @@ test("concept lesson combines explanation, generated art, visualization, video, 
   await page.getByRole("button", { name: /I understand the idea/ }).click();
   await page.getByLabel("Your prediction and reasoning").fill("Lookup must happen before insertion so the current element cannot pair with itself while earlier duplicates remain valid.");
   await page.getByRole("button", { name: /Commit and open editor/ }).click();
-  await page.getByRole("button", { name: /Run hidden tests/ }).click();
-  await expect(page.getByText("3/3 tests passed")).toBeVisible();
+  await page.getByRole("button", { name: /Run 4 learning tests/ }).click();
+  await expect(page.getByText("4 of 4 checks passed.")).toBeVisible();
   await expect(page.getByRole("button", { name: /Explain my solution/ })).toBeEnabled();
+});
+
+test("Solve Alone times one submission, reveals failed checks, and starts a fresh retry", async ({ page }) => {
+  let state = onboardedState();
+  state = reduceLearnerState(state, { type: "lesson.save", payload: { lessonId: "array-scan", progress: { stage: "transfer", prediction: "The maximum must start from real input values.", explanation: "I scan once while best remains correct for the prefix already seen." } } });
+  await routeState(page, state);
+  await routeLessonAssessments(page, false);
+  await page.goto("/learn/array-scan");
+  await expect(page.getByText("8", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("unseen checks")).toBeVisible();
+  await expect(page.getByText(/00:0[0-9]/)).toBeVisible();
+  await page.getByRole("button", { name: /Submit for grading/ }).click();
+  await expect(page.getByRole("heading", { name: "Your next fixes are clear" })).toBeVisible();
+  await expect(page.getByText("Expected -2, but the solution returned 0.")).toBeVisible();
+  await expect(page.getByText("Start best from the first value.")).toBeVisible();
+  await page.getByRole("button", { name: "Ask Luna about this failure" }).click();
+  await expect(page.getByLabel("Ask the AI tutor")).toHaveValue(/All-negative input/);
+  await page.getByRole("button", { name: /Retry with a new test set/ }).click();
+  await expect(page.getByText("Attempt 2 · Python")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Submit for grading/ })).toBeEnabled();
+});
+
+test("failed-check feedback stays readable without page overflow on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let state = onboardedState();
+  state = reduceLearnerState(state, { type: "lesson.save", payload: { lessonId: "array-scan", progress: { stage: "code", prediction: "The best value must be correct for the scanned prefix." } } });
+  await routeState(page, state);
+  await routeLessonAssessments(page);
+  await page.goto("/learn/array-scan");
+  await page.getByRole("button", { name: /Run 4 learning tests/ }).click();
+  await expect(page.getByRole("heading", { name: "Ready to move on" })).toBeVisible();
+  await expect(page.getByText("4 of 4 checks passed.")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
 });
 
 test("problem library contains all 150 runnable packages and the scheduled Core 40", async ({ page }) => {
