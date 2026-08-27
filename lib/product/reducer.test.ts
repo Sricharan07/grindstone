@@ -22,6 +22,14 @@ describe("learner state reducer", () => {
     expect(next.lessons["hashmap-two-sum"]).toMatchObject({ stage: "code", language: "python", code: "draft", prediction: "lookup before insert", transferPassed: false });
   });
 
+  it("moves the current training day only when the learner selects it", () => {
+    const active = reduceLearnerState(createDefaultLearnerState(), { type: "onboarding.complete", payload: { name: "Ada", language: "python", timezone: "UTC", sessionTime: "19:30", startedAt: "2026-08-01T00:00:00Z" } });
+    const dayNine = reduceLearnerState(active, { type: "sprint.day.select", payload: { day: 9 } });
+    const dayTwo = reduceLearnerState(dayNine, { type: "sprint.day.select", payload: { day: 2 } });
+    expect(dayNine.sprint).toMatchObject({ day: 9, week: 2, daysRemaining: 20, status: "active" });
+    expect(dayTwo.sprint).toMatchObject({ day: 2, week: 1, daysRemaining: 27, status: "active" });
+  });
+
   it("updates one FSRS review and discounts repeated XP", () => {
     const first = reduceLearnerState(createDefaultLearnerState(), { type: "attempt.record", payload: independentAttempt });
     const second = reduceLearnerState(first, { type: "attempt.record", payload: { ...independentAttempt, id: "a-2", createdAt: "2026-08-24T00:00:00Z" } });
@@ -72,5 +80,16 @@ describe("learner state reducer", () => {
     expect(withLab.aptitude["3"]).toMatchObject({ currentIndex: 2, completed: false });
     expect(withLab.aptitude["3"].answers["aptitude-10"].correct).toBe(true);
     expect(withLab.labs["3"]).toMatchObject({ evidence: "commit abc123", checks: [true, true, false, false], completed: false });
+  });
+
+  it("completes the sprint only after all final training-day activities are done", () => {
+    let state = reduceLearnerState(createDefaultLearnerState(), { type: "onboarding.complete", payload: { name: "Ada", language: "python", timezone: "UTC", sessionTime: "19:30", startedAt: "2026-08-01T00:00:00Z" } });
+    state = reduceLearnerState(state, { type: "sprint.day.select", payload: { day: 28 } });
+    for (const itemId of ["d28-recall", "d28-aptitude", "d28-repair", "d28-resolve", "d28-lab", "d28-plan"]) {
+      state = reduceLearnerState(state, { type: "plan.toggle", payload: { itemId } });
+    }
+    expect(state.sprint).toMatchObject({ status: "complete", day: 28, week: 4, daysRemaining: 0 });
+    state = reduceLearnerState(state, { type: "plan.toggle", payload: { itemId: "d28-plan" } });
+    expect(state.sprint).toMatchObject({ status: "active", day: 28, week: 4, daysRemaining: 1 });
   });
 });

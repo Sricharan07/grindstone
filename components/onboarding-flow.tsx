@@ -9,7 +9,7 @@ import { useLearnerState } from "./state/learner-state-provider";
 const stepCopy = [
   { title: "What should we call you?", body: "This is the only profile information Grindstone needs for your private cohort." },
   { title: "Choose your interview language.", body: "The curriculum stays the same. Examples, starter code, tests, and interview answers use this language." },
-  { title: "Set your daily start time.", body: "The sprint runs for 28 consecutive days. Every day is 150 minutes; Days 7, 14, 21, and 28 are lower-intensity consolidation days." },
+  { title: "Set your daily start time.", body: "The sprint contains 28 training days. Your chosen day stays current until you decide to move on; Days 7, 14, 21, and 28 are lower-intensity consolidation days." },
 ];
 
 export function OnboardingFlow() {

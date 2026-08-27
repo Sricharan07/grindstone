@@ -7,7 +7,7 @@ import type { LearnerAction } from "@/lib/product/types";
 const actionSchema = z.object({
   type: z.enum([
     "onboarding.save", "onboarding.complete", "profile.update", "lesson.save", "lab.save", "aptitude.save",
-    "plan.toggle", "gate.complete", "attempt.record", "content.report", "streak.recover", "sprint.restart",
+    "plan.toggle", "gate.complete", "attempt.record", "content.report", "streak.recover", "sprint.day.select", "sprint.restart",
   ]),
   payload: z.unknown().optional(),
 });

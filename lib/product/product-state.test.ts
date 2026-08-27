@@ -27,11 +27,12 @@ describe("28-day product state", () => {
     expect(dailyPlanFor(createDefaultLearnerState()).scheduledMinutes).toBe(150);
   });
 
-  it("advances day, week, remaining time, and completion from the start timestamp", () => {
+  it("keeps the learner-selected day even when calendar time passes", () => {
     const state = createDefaultLearnerState();
     state.sprint.status = "active";
+    state.sprint.day = 2;
     state.sprint.startedAt = "2026-08-01T12:00:00Z";
-    expect(sprintClock(state.sprint, new Date("2026-08-09T12:00:00Z"))).toMatchObject({ day: 9, week: 2, daysRemaining: 20, status: "active" });
-    expect(synchronizeTemporalState(state, new Date("2026-08-29T12:00:00Z")).sprint.status).toBe("complete");
+    expect(sprintClock(state.sprint)).toMatchObject({ day: 2, week: 1, daysRemaining: 27, status: "active" });
+    expect(synchronizeTemporalState(state, new Date("2026-09-29T12:00:00Z")).sprint).toMatchObject({ day: 2, week: 1, daysRemaining: 27, status: "active" });
   });
 });

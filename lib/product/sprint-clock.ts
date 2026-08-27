@@ -1,21 +1,17 @@
 import type { LearnerState, SprintState } from "./types";
 
-const dayMs = 24 * 60 * 60 * 1000;
-
-export function sprintClock(sprint: SprintState, now = new Date()) {
-  if (sprint.status === "draft" || !sprint.startedAt) return { week: sprint.week, day: sprint.day, daysRemaining: sprint.daysRemaining, status: sprint.status };
-  const elapsed = Math.floor(Math.max(0, now.getTime() - new Date(sprint.startedAt).getTime()) / dayMs);
-  const day = Math.min(28, elapsed + 1);
+export function sprintClock(sprint: SprintState) {
+  const day = Math.min(28, Math.max(1, sprint.day));
   return {
     week: Math.min(4, Math.ceil(day / 7)) as 1 | 2 | 3 | 4,
     day,
-    daysRemaining: Math.max(0, 28 - elapsed),
-    status: elapsed >= 28 ? "complete" as const : "active" as const,
+    daysRemaining: sprint.status === "complete" ? 0 : 29 - day,
+    status: sprint.status,
   };
 }
 
 export function synchronizeTemporalState(state: LearnerState, now = new Date()): LearnerState {
-  const clock = sprintClock(state.sprint, now);
+  const clock = sprintClock(state.sprint);
   const today = now.toISOString().slice(0, 10);
   return {
     ...state,

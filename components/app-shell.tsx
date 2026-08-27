@@ -139,7 +139,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <section className="app-stage">
         <header className="topbar">
           <div><p>{onboarded ? `Day ${state.sprint.day} of 28` : "Setup"}</p><h1>{title}</h1></div>
-          {onboarded && <Link href="/" className="topbar-resume">Resume today <ArrowRight size={16} /></Link>}
+          {onboarded && <Link href="/" className="topbar-resume">Resume current day <ArrowRight size={16} /></Link>}
         </header>
         <main className="app-main">{blocked ? <SetupRequired /> : children}</main>
       </section>

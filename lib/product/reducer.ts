@@ -2,6 +2,8 @@ import { newReviewCard, REVIEW_GRADES, scheduleReview, updateMastery } from "@/l
 import { initialsFor } from "./default-state";
 import type { LearnerAction, LearnerState, ReadinessDimension } from "./types";
 
+const finalDayItems = ["d28-recall", "d28-aptitude", "d28-repair", "d28-resolve", "d28-lab", "d28-plan"];
+
 function xpForAttempt(correct: boolean, difficulty: number, timed: boolean, priorRepetitions: number, independent: boolean) {
   if (!timed) return correct ? 5 : 0;
   const base = correct ? Math.round(12 + difficulty * 20) : 2;
@@ -150,7 +152,18 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
       const completedItems = exists
         ? state.sprint.completedItems.filter((id) => id !== action.payload.itemId)
         : [...state.sprint.completedItems, action.payload.itemId];
-      return { ...state, revision, sprint: { ...state.sprint, completedItems } };
+      const finalDayComplete = finalDayItems.every((id) => completedItems.includes(id));
+      const finalDayChanged = finalDayItems.includes(action.payload.itemId);
+      return {
+        ...state,
+        revision,
+        sprint: {
+          ...state.sprint,
+          completedItems,
+          ...(finalDayComplete ? { status: "complete" as const, day: 28, week: 4 as const, daysRemaining: 0 } : {}),
+          ...(finalDayChanged && !finalDayComplete && state.sprint.status === "complete" ? { status: "active" as const, day: 28, week: 4 as const, daysRemaining: 1 } : {}),
+        },
+      };
     }
 
     case "gate.complete": {
@@ -246,6 +259,23 @@ export function reduceLearnerState(state: LearnerState, action: LearnerAction): 
           recoveryTokens: state.streak.recoveryTokens - 1,
           protectedToday: true,
           lastProtectedDate: action.payload.protectedAt.slice(0, 10),
+        },
+      };
+    }
+
+    case "sprint.day.select": {
+      const requestedDay = Number(action.payload.day);
+      if (!Number.isInteger(requestedDay)) return state;
+      const day = Math.min(28, Math.max(1, requestedDay));
+      return {
+        ...state,
+        revision,
+        sprint: {
+          ...state.sprint,
+          day,
+          week: Math.min(4, Math.ceil(day / 7)) as 1 | 2 | 3 | 4,
+          daysRemaining: 29 - day,
+          status: state.sprint.status === "draft" ? "draft" : "active",
         },
       };
     }

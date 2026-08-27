@@ -2,8 +2,8 @@ import { activitiesFor, sprintDay } from "@/lib/curriculum/catalog";
 import type { LearnerState } from "./types";
 import { sprintClock } from "./sprint-clock";
 
-export function dailyPlanFor(state: LearnerState, now = new Date()) {
-  const clock = sprintClock(state.sprint, now);
+export function dailyPlanFor(state: LearnerState) {
+  const clock = sprintClock(state.sprint);
   const day = sprintDay(clock.day);
   const items = activitiesFor(day);
   return {

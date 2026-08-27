@@ -94,26 +94,26 @@ export function TodayDashboard() {
       <section className="resume-panel" aria-labelledby="resume-title">
         <div className="resume-panel__number">{nextItem ? plan.items.indexOf(nextItem) + 1 : <Check size={22} />}</div>
         <div>
-          <p className="section-label">{nextItem ? "Your next task" : "Today's evidence is complete"}</p>
-          <h2 id="resume-title">{nextItem?.title ?? "Close the session while the notes are fresh"}</h2>
-          <p>{nextItem ? `${nextItem.minutes} minutes · Proof: ${nextItem.proof}` : plan.day.evidence}</p>
+          <p className="section-label">{nextItem ? "Your next task" : `Day ${plan.day.day} evidence is complete`}</p>
+          <h2 id="resume-title">{nextItem?.title ?? (plan.day.day < 28 ? `Move to Day ${plan.day.day + 1} when you are ready.` : "Close the sprint while the evidence is fresh.")}</h2>
+          <p>{nextItem ? `${nextItem.minutes} minutes · Proof: ${nextItem.proof}` : plan.day.day < 28 ? "There is no calendar deadline. This completed day stays saved until you choose the next one." : plan.day.evidence}</p>
         </div>
-        {nextItem ? <Link href={nextItem.href} className="button button--primary">{state.lessons[plan.day.lessonSlug ?? ""] ? "Resume" : "Start"} <ArrowRight size={17} /></Link> : <Link href="/progress" className="button button--primary">Review evidence <ArrowRight size={17} /></Link>}
+        {nextItem ? <Link href={nextItem.href} className="button button--primary">{state.lessons[plan.day.lessonSlug ?? ""] ? "Resume" : "Start"} <ArrowRight size={17} /></Link> : plan.day.day < 28 ? <Link href={`/curriculum?day=${plan.day.day + 1}`} className="button button--primary">Choose next day <ArrowRight size={17} /></Link> : <Link href="/progress" className="button button--primary">Review evidence <ArrowRight size={17} /></Link>}
       </section>
 
       <section className="today-status" aria-label="Sprint status">
-        <div><span>Today</span><strong>{completedMinutes} / {plan.scheduledMinutes} min</strong><small>{remainingMinutes ? `Finish near ${finishAt}` : "Complete"}</small></div>
-        <div><span>Week</span><strong>{state.sprint.week} of 4</strong><small>{state.sprint.daysRemaining} days remaining</small></div>
+        <div><span>Current day</span><strong>{completedMinutes} / {plan.scheduledMinutes} min</strong><small>{remainingMinutes ? `Finish near ${finishAt}` : "Complete"}</small></div>
+        <div><span>Week</span><strong>{state.sprint.week} of 4</strong><small>{state.sprint.daysRemaining} training days in path</small></div>
         <div><span>Streak</span><strong><Flame size={16} /> {state.streak.days} days</strong><small>{state.streak.protectedToday ? "Protected today" : "A timed pass protects today"}</small></div>
         <div><span>Readiness</span><strong>{readiness.enoughEvidence ? readiness.score : "--"}</strong><small>{readiness.confidence}</small></div>
       </section>
 
       <section className="session-plan" aria-labelledby="session-plan-title">
         <header>
-          <div><h2 id="session-plan-title">Today&apos;s session</h2><p>{plan.message}</p></div>
+          <div><h2 id="session-plan-title">Day {plan.day.day} session</h2><p>{plan.message}</p></div>
           <span>{completed.size} of {plan.items.length} activities</span>
         </header>
-        <ProgressBar value={completion} label={`Today's session ${completion}% complete`} />
+        <ProgressBar value={completion} label={`Day ${plan.day.day} session ${completion}% complete`} />
 
         <ol className="activity-list">
           {plan.items.map((item, index) => {

@@ -169,4 +169,5 @@ export type LearnerAction =
   | { type: "attempt.record"; payload: AttemptEvidence }
   | { type: "content.report"; payload: { itemId: string; reason: string; createdAt: string } }
   | { type: "streak.recover"; payload: { protectedAt: string } }
+  | { type: "sprint.day.select"; payload: { day: number } }
   | { type: "sprint.restart"; payload: { startedAt: string } };

@@ -16,7 +16,7 @@ export function GateWorkspace({ dayNumber }: { dayNumber: number }) {
   const aptitudeAttempts = state.attempts.filter((attempt) => attempt.itemType === "aptitude" && attempt.itemId.startsWith(`day${dayNumber}:`));
   const lab = state.labs[String(dayNumber)];
   const priorResult = state.sprint.gates[String(day.week)];
-  const locked = dayNumber > state.sprint.day;
+  const locked = dayNumber !== state.sprint.day && !priorResult;
   const codingReady = candidates.length === 2 && codingAttempts.every(Boolean);
   const aptitudeReady = aptitudeAttempts.length >= 8;
   const labReady = Boolean(lab?.completed);
@@ -60,7 +60,7 @@ export function GateWorkspace({ dayNumber }: { dayNumber: number }) {
     if (!state.sprint.completedItems.includes(itemId)) dispatch({ type: "plan.toggle", payload: { itemId, completedAt } });
   }
 
-  if (locked) return <section className="session-error"><Lock size={24} /><h1>Week {day.week} gate opens on Day {dayNumber}.</h1><p>The tasks stay hidden until the evidence window so previewing them cannot inflate the result.</p><Link href="/curriculum" className="button button--primary"><ArrowLeft size={16} /> Curriculum</Link></section>;
+  if (locked) return <section className="session-error"><Lock size={24} /><h1>Choose Day {dayNumber} before opening this gate.</h1><p>The tasks stay hidden until you explicitly make this your current training day, so an accidental preview cannot inflate the result.</p><Link href={`/curriculum?day=${dayNumber}`} className="button button--primary"><ArrowLeft size={16} /> Choose Day {dayNumber}</Link></section>;
 
   if (priorResult) return <div className="session-workspace"><header className="session-heading"><Link href="/" className="button button--quiet"><ArrowLeft size={16} /> Today</Link><div><p className="section-label">Week {day.week} evidence gate</p><h1>{day.title}</h1><p>This result is saved. It can be inspected without overwriting the original evidence.</p></div></header><section className="round-complete"><span className={cn("round-score", priorResult.passed && "is-pass")}>{priorResult.score}%</span><div><p className="section-label">{priorResult.passed ? "Gate passed" : "Targeted repair required"}</p><h2>{priorResult.passed ? "Independent evidence met the weekly bar." : "The next week will retain the failed areas."}</h2><p>{priorResult.failedTopics.length ? `Repair: ${priorResult.failedTopics.join(", ")}.` : "No critical evidence gap was recorded."}</p><div><Link href="/progress" className="button button--primary">See readiness <ArrowRight size={16} /></Link><Link href="/" className="button button--secondary">Continue today</Link></div></div></section></div>;
 

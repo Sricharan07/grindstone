@@ -99,40 +99,38 @@ test("Today exposes one next action and four primary destinations", async ({ pag
   await page.goto("/");
   await expect(page.getByText("Your next task")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link")).toHaveCount(4);
-  await expect(page.getByText("Today's session")).toBeVisible();
+  await expect(page.getByText("Day 1 session")).toBeVisible();
   await expect(page.getByText("150", { exact: false }).first()).toBeVisible();
 });
 
 test("curriculum shows every one of the 28 ordered days", async ({ page }) => {
   await routeState(page, onboardedState());
   await page.goto("/curriculum");
-  await expect(page.getByRole("heading", { name: "Choose a day. Keep every result." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose where you continue." })).toBeVisible();
   await expect(page.locator(".week-band")).toHaveCount(4);
   await expect(page.locator(".week-band li button")).toHaveCount(28);
   await expect(page.getByRole("button", { name: /28 Debrief and continue Turn the sprint into interview evidence/ })).toBeVisible();
 });
 
 test("a learner on Day 4 can directly start or revisit Day 1 without losing access", async ({ page }) => {
-  const state = onboardedState();
-  state.sprint.startedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const state = reduceLearnerState(onboardedState(), { type: "sprint.day.select", payload: { day: 4 } });
   await routeState(page, state);
   await page.goto("/curriculum");
 
   await expect(page.getByText("4", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: /Start Day 1: Choose the structure before the loop/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Start from Day 1: Choose the structure before the loop/ })).toBeVisible();
   await page.getByRole("button", { name: /1 Learn and apply Choose the structure before the loop/ }).click();
   await expect(page).toHaveURL(/\/curriculum\?day=1$/);
   await expect(page.getByRole("heading", { name: "Day 1: Choose the structure before the loop" })).toBeVisible();
-  await expect(page.getByText("This day does not expire when the calendar moves on.")).toBeVisible();
+  await expect(page.getByText("Starting this day makes it current", { exact: false })).toBeVisible();
   await expect(page.locator(".day-activity-list li")).toHaveCount(6);
 
-  await page.getByRole("link", { name: /Start Day 1/ }).last().click();
+  await page.getByRole("link", { name: /Start from Day 1/ }).last().click();
   await expect(page).toHaveURL(/\/learn\/array-scan$/);
 });
 
 test("completed days remain reviewable while future evidence gates stay locked", async ({ page }) => {
-  const state = onboardedState();
-  state.sprint.startedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  const state = reduceLearnerState(onboardedState(), { type: "sprint.day.select", payload: { day: 4 } });
   state.sprint.completedItems = activitiesFor(SPRINT_DAYS[0]).map((activity) => activity.id);
   await routeState(page, state);
   await page.goto("/curriculum?day=1");
@@ -140,8 +138,32 @@ test("completed days remain reviewable while future evidence gates stay locked",
   await expect(page.getByText("Completed. Reopen any activity below without losing your saved evidence.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Review Day 1", exact: true })).toHaveAttribute("href", "/learn/array-scan");
   await page.getByRole("button", { name: /6 Evidence gate Week 1 screening gate/ }).click();
-  await expect(page.getByText("This timed gate opens on Day 6.")).toBeVisible();
-  await expect(page.getByRole("link", { name: /Start Day 6/ })).toHaveCount(0);
+  await expect(page.getByText("This gate stays hidden until you explicitly choose Day 6", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Start from Day 6", exact: true })).toBeVisible();
+});
+
+test("a completed day waits indefinitely until the learner chooses the next one", async ({ page }) => {
+  const state = onboardedState();
+  state.sprint.startedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+  state.sprint.completedItems = activitiesFor(SPRINT_DAYS[0]).map((activity) => activity.id);
+  await routeState(page, state);
+
+  await page.goto("/");
+  await expect(page.getByText("Day 1 · Week 1 · Learning day")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Move to Day 2 when you are ready." })).toBeVisible();
+  await page.getByRole("link", { name: "Choose next day" }).click();
+  await expect(page).toHaveURL(/\/curriculum\?day=2$/);
+  await expect(page.getByText("current training day", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Start from Day 2", exact: true }).click();
+  await expect(page).toHaveURL(/\/learn\/hashmap-two-sum$/);
+
+  await page.goto("/");
+  await expect(page.getByText("Day 2 · Week 1 · Learning day")).toBeVisible();
+  await page.goto("/curriculum?day=1");
+  await page.getByRole("link", { name: "Review Day 1", exact: true }).click();
+  await expect(page).toHaveURL(/\/learn\/array-scan$/);
+  await page.goto("/");
+  await expect(page.getByText("Day 2 · Week 1 · Learning day")).toBeVisible();
 });
 
 test("concept lesson combines explanation, generated art, visualization, video, Luna, and editor", async ({ page }) => {
