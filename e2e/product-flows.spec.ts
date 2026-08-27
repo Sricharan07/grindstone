@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { activitiesFor, SPRINT_DAYS } from "../lib/curriculum/catalog";
 import { createDefaultLearnerState } from "../lib/product/default-state";
 import { reduceLearnerState } from "../lib/product/reducer";
 import type { LearnerAction, LearnerState } from "../lib/product/types";
@@ -105,10 +106,42 @@ test("Today exposes one next action and four primary destinations", async ({ pag
 test("curriculum shows every one of the 28 ordered days", async ({ page }) => {
   await routeState(page, onboardedState());
   await page.goto("/curriculum");
-  await expect(page.getByRole("heading", { name: "Know what you are learning, building, and proving." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose a day. Keep every result." })).toBeVisible();
   await expect(page.locator(".week-band")).toHaveCount(4);
   await expect(page.locator(".week-band li button")).toHaveCount(28);
   await expect(page.getByRole("button", { name: /28 Debrief and continue Turn the sprint into interview evidence/ })).toBeVisible();
+});
+
+test("a learner on Day 4 can directly start or revisit Day 1 without losing access", async ({ page }) => {
+  const state = onboardedState();
+  state.sprint.startedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  await routeState(page, state);
+  await page.goto("/curriculum");
+
+  await expect(page.getByText("4", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /Start Day 1: Choose the structure before the loop/ })).toBeVisible();
+  await page.getByRole("button", { name: /1 Learn and apply Choose the structure before the loop/ }).click();
+  await expect(page).toHaveURL(/\/curriculum\?day=1$/);
+  await expect(page.getByRole("heading", { name: "Day 1: Choose the structure before the loop" })).toBeVisible();
+  await expect(page.getByText("This day does not expire when the calendar moves on.")).toBeVisible();
+  await expect(page.locator(".day-activity-list li")).toHaveCount(6);
+
+  await page.getByRole("link", { name: /Start Day 1/ }).last().click();
+  await expect(page).toHaveURL(/\/learn\/array-scan$/);
+});
+
+test("completed days remain reviewable while future evidence gates stay locked", async ({ page }) => {
+  const state = onboardedState();
+  state.sprint.startedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  state.sprint.completedItems = activitiesFor(SPRINT_DAYS[0]).map((activity) => activity.id);
+  await routeState(page, state);
+  await page.goto("/curriculum?day=1");
+
+  await expect(page.getByText("Completed. Reopen any activity below without losing your saved evidence.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review Day 1", exact: true })).toHaveAttribute("href", "/learn/array-scan");
+  await page.getByRole("button", { name: /6 Evidence gate Week 1 screening gate/ }).click();
+  await expect(page.getByText("This timed gate opens on Day 6.")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Start Day 6/ })).toHaveCount(0);
 });
 
 test("concept lesson combines explanation, generated art, visualization, video, Luna, and editor", async ({ page }) => {

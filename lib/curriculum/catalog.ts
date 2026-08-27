@@ -441,7 +441,9 @@ export function sprintDay(day: number) {
 export function activitiesFor(day: SprintDay): SessionActivity[] {
   const lessonHref = day.lessonSlug ? `/learn/${day.lessonSlug}` : `/curriculum?day=${day.day}`;
   const common = {
-    recall: { label: "Recall", minutes: 10, href: "/problems?view=reviews" },
+    recall: day.day === 1
+      ? { label: "Orient", minutes: 10, href: lessonHref }
+      : { label: "Recall", minutes: 10, href: "/problems?view=reviews" },
     aptitude: { label: "Aptitude", minutes: 20, href: `/session/${day.day}/aptitude` },
     concept: { label: "Learn", minutes: 25, href: lessonHref },
     problems: { label: "Solve", minutes: 45, href: `/problems?view=scheduled&day=${day.day}` },
@@ -451,7 +453,7 @@ export function activitiesFor(day: SprintDay): SessionActivity[] {
 
   if (day.kind === "learn") {
     return [
-      { id: `d${day.day}-recall`, ...common.recall, title: "Bring back yesterday's key idea", proof: "One answer or re-solve from memory" },
+      { id: `d${day.day}-recall`, ...common.recall, title: day.day === 1 ? "Name what you know and one question to resolve" : "Bring back yesterday's key idea", proof: day.day === 1 ? "One known idea and one question for Luna" : "One answer or re-solve from memory" },
       { id: `d${day.day}-aptitude`, ...common.aptitude, title: day.aptitude, proof: "Timed accuracy plus error review" },
       { id: `d${day.day}-concept`, ...common.concept, title: day.outcome, proof: "Prediction and concept check" },
       { id: `d${day.day}-problems`, ...common.problems, title: day.problems.join(" and "), proof: "Code, tests, complexity, and explanation" },
